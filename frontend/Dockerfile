@@ -1,5 +1,5 @@
 # Frontend image: static build served by nginx (dev proxy handled by vite in dev mode).
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile

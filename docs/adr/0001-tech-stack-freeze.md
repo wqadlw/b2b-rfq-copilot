@@ -22,7 +22,7 @@
 | LLM 接口 | **OpenAI 兼容端点**（DeepSeek / Qwen / GLM 系），分层模型：轻量理解 + 强模型回答 | config |
 | 可观测 | **Langfuse**（云免费档或自托管）+ structlog JSON | observability/ |
 | 依赖契约 | **import-linter**（CI 强制） | pyproject |
-| Node | **20 LTS** | frontend |
+| Node | **22 LTS**（2026-09-12 修订：20→22，pnpm 11 要求 ≥22.13 且 Node 20 已 EOL） | frontend |
 | 前端包管理 | **pnpm**（lockfile 提交） | pnpm-lock.yaml |
 | 前端框架 | **Vite + React 19 + TypeScript strict** | frontend |
 | 样式/组件 | **Tailwind CSS v4（CSS-first）+ shadcn/ui（Radix）** | frontend |

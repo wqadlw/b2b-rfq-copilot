@@ -35,8 +35,20 @@ ALLOWED_STRINGS = frozenset(
 )
 SKIP_DIRS = frozenset({".git", ".venv", "node_modules", "__pycache__", ".ruff_cache", ".mypy_cache", "dist"})
 TEXT_SUFFIXES = {
-    ".py", ".md", ".json", ".yaml", ".yml", ".toml", ".ts", ".tsx", ".js", ".css",
-    ".html", ".example", ".cfg", ".txt",
+    ".py",
+    ".md",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".css",
+    ".html",
+    ".example",
+    ".cfg",
+    ".txt",
 }
 
 
