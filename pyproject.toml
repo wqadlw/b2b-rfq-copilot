@@ -1,0 +1,82 @@
+[project]
+name = "rfq-copilot"
+version = "0.1.0"
+description = "Generic vertical-industry B2B AI RFQ copilot engine (Core + Ports + Adapters)"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "langgraph>=0.2",
+    "structlog>=24.1",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "import-linter>=2.1",
+    "types-PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/src/rfq_copilot"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["backend/src", "backend/tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "backend/src"
+files = ["backend/src"]
+
+[[tool.mypy.overrides]]
+module = ["langgraph.*", "langgraph_core.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"
+pythonpath = ["backend/src"]
+
+[tool.importlinter]
+root_packages = ["rfq_copilot"]
+
+[[tool.importlinter.contracts]]
+name = "ports package is independent"
+type = "independence"
+modules = ["rfq_copilot.ports"]
+
+[[tool.importlinter.contracts]]
+name = "core never imports adapters or app"
+type = "forbidden"
+source_modules = ["rfq_copilot.core"]
+forbidden_modules = ["rfq_copilot.adapters", "rfq_copilot.app"]
+
+[[tool.importlinter.contracts]]
+name = "adapters never import core, app or schemas"
+type = "forbidden"
+source_modules = ["rfq_copilot.adapters"]
+forbidden_modules = ["rfq_copilot.core", "rfq_copilot.app", "rfq_copilot.schemas"]
+
+[[tool.importlinter.contracts]]
+name = "app is the only composition root"
+type = "forbidden"
+source_modules = ["rfq_copilot.ports", "rfq_copilot.core", "rfq_copilot.adapters"]
+forbidden_modules = ["rfq_copilot.app"]

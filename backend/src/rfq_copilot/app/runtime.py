@@ -1,0 +1,89 @@
+"""Runtime assembly: manifest → ports → graph (app is the only composition root)."""
+
+import importlib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from rfq_copilot.config.settings import get_settings
+from rfq_copilot.core.agent.graph import GraphDeps, build_graph
+from rfq_copilot.core.agent.llm import LLMClient, OpenAICompatLLM
+from rfq_copilot.core.manifest import Manifest, load_manifest
+from rfq_copilot.core.memory import SessionStore
+from rfq_copilot.core.policies.refusal import derive_refusal_policies
+from rfq_copilot.core.prompts import PromptRegistry
+from rfq_copilot.core.rag.retriever import KeywordRetriever
+from rfq_copilot.ports.errors import ConfigError
+
+ADAPTERS_DIR = Path(__file__).resolve().parent.parent / "adapters"
+POISONED_IDS = frozenset({"demo-kb-poison-001", "demo-kb-poison-002", "demo-kb-poison-003"})
+
+
+@dataclass
+class Runtime:
+    manifest: Manifest
+    deps: GraphDeps
+    graph: Any
+    store: SessionStore
+
+
+def _adapter_module(adapter: str) -> Any:
+    try:
+        return importlib.import_module(f"rfq_copilot.adapters.{adapter}.adapter")
+    except ImportError as exc:
+        raise ConfigError(f"adapter implementation not found: {adapter}") from exc
+
+
+def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtime:
+    adapter_dir = ADAPTERS_DIR / adapter
+    manifest = load_manifest(adapter_dir)  # V1~V7 validation (V2 via module import below)
+    module = _adapter_module(adapter)  # V2: enabled ports must have an implementation package
+    ports = module.build_demo_ports()
+    settings = get_settings()
+    client = llm or OpenAICompatLLM(
+        base_url=settings.llm_base_url, api_key=settings.llm_api_key, model=settings.llm_model
+    )
+    store = SessionStore()
+    retriever = KeywordRetriever(ports.knowledge) if manifest.ports.knowledge_source.enabled else None
+    deps = GraphDeps(
+        manifest=manifest,
+        llm=client,
+        prompts=PromptRegistry(),
+        refusal_policies=derive_refusal_policies(manifest),
+        store=store,
+        catalog=ports.catalog if manifest.ports.product_catalog.enabled else None,
+        suppliers=ports.suppliers if manifest.ports.supplier_directory.enabled else None,
+        retriever=retriever,
+        inquiry_sink=ports.inquiry_sink if manifest.ports.inquiry_sink.enabled else None,
+        lead_distribution=ports.lead_distribution if manifest.ports.lead_distribution.enabled else None,
+        poisoned_ids=POISONED_IDS,
+    )
+    return Runtime(manifest=manifest, deps=deps, graph=build_graph(deps), store=store)
+
+
+def ui_config(runtime: Runtime) -> dict[str, Any]:
+    m = runtime.manifest
+    return {
+        "adapter": m.adapter,
+        "display_name": m.display_name,
+        "chat": {
+            "welcome_message": m.chat.welcome_message,
+            "suggested_questions": m.chat.suggested_questions,
+        },
+        "theme": {"primary": m.chat.theme_primary},
+        "capabilities": {
+            "product_catalog": m.ports.product_catalog.enabled,
+            "supplier_directory": m.ports.supplier_directory.enabled,
+            "knowledge_source": m.ports.knowledge_source.enabled,
+            "inquiry": m.ports.inquiry_sink.enabled,
+            "lead_distribution": m.ports.lead_distribution.enabled,
+            "pricing": m.capabilities.pricing.enabled,
+            "lead_time": m.capabilities.lead_time.enabled,
+            "stock": m.capabilities.stock.enabled,
+        },
+        "inquiry": {
+            "guest_allowed": m.ports.inquiry_sink.guest_allowed,
+            "required_fields": m.ports.inquiry_sink.required_fields,
+        },
+        "i18n": "zh-CN",
+    }

@@ -1,0 +1,27 @@
+manifest_version: 1
+adapter: vacuum_b2b_sample
+display_name: "Vacuum Industry B2B (Sample)"
+languages: [zh-CN]
+
+ports:
+  product_catalog:
+    enabled: true
+    features: [search, detail]
+  supplier_directory:
+    enabled: true
+  knowledge_source:
+    enabled: true
+    doc_types: [platform_faq, selection_guide, policy, product, merchant_article]
+  inquiry_sink:
+    enabled: true
+    guest_allowed: true
+    required_fields: [contact_name, contact_phone]
+    optional_fields: [company, email, quantity, region]
+  lead_distribution:
+    enabled: true
+    type: marketplace
+
+capabilities:
+  pricing:   { enabled: false }
+  lead_time: { enabled: false }
+  stock:     { enabled: false }

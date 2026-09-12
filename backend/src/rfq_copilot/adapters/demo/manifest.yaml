@@ -1,0 +1,34 @@
+manifest_version: 1
+adapter: demo
+display_name: "Demo B2B Platform"
+languages: [zh-CN]
+
+ports:
+  product_catalog:
+    enabled: true
+    features: [search, detail]
+  supplier_directory:
+    enabled: true
+  knowledge_source:
+    enabled: true
+    doc_types: [platform_faq, selection_guide, policy, product, merchant_article]
+  inquiry_sink:
+    enabled: true
+    guest_allowed: true
+    required_fields: [contact_name, contact_phone]
+    optional_fields: [company, email, quantity, region]
+  lead_distribution:
+    enabled: true
+    type: marketplace
+
+capabilities:
+  pricing:   { enabled: false }
+  lead_time: { enabled: false }
+  stock:     { enabled: false }
+
+chat:
+  welcome_message: "您好，我是采购助手，可以帮您查产品、对参数、做选型，需要报价可直接为您创建询盘。"
+  suggested_questions:
+    - "有哪些无油泵适合实验室？"
+    - "这款泵的极限真空是多少？"
+    - "帮我创建一台无油泵的询盘"
