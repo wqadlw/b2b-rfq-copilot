@@ -33,28 +33,29 @@
 - [x] 种子用例 47 条（`../eval/cases/`：A 正向 30 · C 投毒 12 · D 权限确认 15；B 族按派生器生成不手写）
 - [x] 指标定义 / 通过失败判定 / 报告格式 / 命名规则（`specs/06-eval-spec.md`）
 
-## 6. 开发环境（M0）
+## 6. 开发环境（M0）——✅ 已交付（commit 30748e4）
 
-- [ ] ⏳ docker-compose.yml（demo 单容器默认 + --profile prod）
-- [ ] ⏳ .env.example（分组键名，无值）
-- [ ] ⏳ Makefile（目标 Windows Git-Bash 兼容）
-- [ ] ⏳ scripts/bootstrap.py · scripts/ingest_demo_knowledge.py · scripts/run_eval.py · scripts/check_repo_policy.py
-- [ ] ⏳ 本地一键运行说明（guides/deployment.md）
+- [x] docker-compose.yml（backend/frontend 默认 + `--profile prod` postgres+pgvector）
+- [x] .env.example（分组键名，无值）
+- [x] Makefile（help/bootstrap/dev/lint/typecheck/test/build/policy/eval + frontend 分目标）
+- [x] scripts/bootstrap.py · check_repo_policy.py · run_eval.py · ingest_demo_knowledge.py（可被 CI 调用，已本地实测）
+- [ ] ⏳ guides/deployment.md（M1 随文档循环补）
 
 ## 7. 安全基线
 
 - [x] 威胁模型 8 条 + 对策挂钩（`specs/07-security-spec.md`）
 - [x] 信任分级/指令隔离/确认门（port-spec §6 权威）
 - [x] 限流/密钥管理/日志脱敏/PII 规则（07-security-spec §3~5）
-- [x] 四个攻击场景有用例（C 族 12 条覆盖：商户内容推荐本店/忽略指令/伪造价格表/泄露提示词/用户注入/角色扮演越权等）
+- [x] 四个攻击场景有用例（C 族 12 条覆盖：商户内容推荐本店/忽略指令/伪造价格表/泄露系统提示/用户注入/角色扮演越权等）
 
-## 8. 仓库治理（M0）
+## 8. 仓库治理（M0）——✅ 已交付（commit 30748e4）
 
 - [x] LICENSE（MIT）/ README 种子 / CODE_ORGANIZATION / REPO_POLICY / REFERENCES
-- [ ] ⏳ .github/workflows/ci.yml（七门）+ PULL_REQUEST_TEMPLATE + ISSUE_TEMPLATE（M0）
-- [ ] ⏳ 公开 ADR 种子补齐（0001 已交付；0002 ports+manifest · 0003 pgvector · 0004 frontend 随 M0）
+- [x] .github/workflows/ci.yml（七门）+ PULL_REQUEST_TEMPLATE + ISSUE_TEMPLATE
+- [x] 公开 ADR：0001 技术栈冻结 · 0002 端口+manifest · 0003 pgvector · 0004 前端栈与嵌入组件
 
 ## 门禁结论
 
 - **规格冻结项（1~5 节）：已全部达成，2026-09-12。**
-- M0 首个 commit 交付 ⏳ 项后即满足 M1 开工条件（对应 TASK_BOARD T-001/T-010 验收）。
+- **工程地基（6/8 节）：已交付并本地验证（ruff/mypy/pytest 23/import-linter/pnpm build/eslint/四脚本/compose config 全绿）。**
+- 待 push 至 GitHub 远端后由 Actions 出 CI 七门全绿证明 → 过八项 M1 前复核 → M1。
