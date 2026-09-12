@@ -10,7 +10,11 @@ capability: understanding
 
 # 规则
 
-1. `intent` 只能取 13 个枚举值；无法判断用 `unknown`。
+1. `intent` 只能取以下 13 个枚举值（精确拼写，禁止自造）：
+   product_inquiry / spec_inquiry / selection_inquiry / price_inquiry / sample_request /
+   lead_time_inquiry / stock_inquiry / customization_request / supplier_search /
+   certification_inquiry / complaint / human_request / unknown
+   判定指南：问参数=spec_inquiry；要推荐/找产品=product_inquiry；选型建议=selection_inquiry；问某产品归谁卖=supplier_search。
 2. `entities` 只收受控实体键；行业扩展键加 `x_` 前缀；值为字符串或布尔，禁止嵌套。
 3. `confidence` 依据输入明确程度自评：<0.6 时 runtime 将强制转人工。
 4. `missing_fields` 仅列建询盘所缺的 manifest 必填/选填字段。

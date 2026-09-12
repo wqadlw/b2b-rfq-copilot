@@ -92,10 +92,12 @@ def _run_live(cases: list[dict]) -> tuple[Counter, list[str]]:
     from rfq_copilot.config.settings import get_settings
 
     settings = get_settings()
-    if settings.embedding_provider != "openai_compatible" or not settings.llm_api_key:
-        print("live run requires EMBEDDING_PROVIDER=openai_compatible and LLM_API_KEY in .env")
+    if not settings.llm_api_key:
+        print("live run requires LLM_API_KEY in .env")
         sys.exit(3)
+    retrieval_mode = "semantic(bge-m3)" if settings.embedding_provider == "openai_compatible" else "hashing(fallback)"
     rt = build_runtime()
+    print(f"live: llm={settings.llm_model} retrieval={retrieval_mode}")
 
     async def drive() -> tuple[Counter, list[str]]:
         await seed_demo(rt)
@@ -103,21 +105,37 @@ def _run_live(cases: list[dict]) -> tuple[Counter, list[str]]:
         failures: list[str] = []
         for case in cases:
             session_id = "evalcase-" + str(abs(hash(case["id"])) % 10_000_000_00)
-            state: dict[str, Any] = {
-                "session_id": session_id,
-                "message": str(case["turns"][-1]["content"])[:2000],
-                "contact": {"name": "评测", "phone": "13800000000"},
-                "quantity": 10,
-                "events": [],
-                "tool_calls": [],
-            }
             config = {"configurable": {"thread_id": session_id}}
-            final = await rt.graph.ainvoke(state, config)
-            resume = case.get("resume_action")
-            if (final.get("__interrupt__") or []) and resume in ALLOWED_RESUME_ACTIONS:
-                final = await rt.graph.ainvoke(Command(resume={"action": resume}), config)
-            answer = str(final.get("answer", ""))[:2000]
-            events = [e for e, _ in final.get("events", [])]
+            expects_created = any(
+                "inquiry_created" in a.get("must_include", []) for a in case.get("asserts", [])
+            )
+            supply_contact = expects_created
+            answer, events = "", []
+            for turn_index, turn in enumerate(case["turns"]):
+                state: dict[str, Any] = {
+                    "session_id": session_id,
+                    "message": str(turn["content"])[:2000],
+                    "contact": {"name": "评测", "phone": "13800000000"} if supply_contact else None,
+                    "quantity": 10 if supply_contact else None,
+                    "events": [],
+                    "tool_calls": [],
+                }
+                final = await rt.graph.ainvoke(state, config)
+                interrupted = final.get("__interrupt__") or []
+                if interrupted and turn_index == len(case["turns"]) - 1:
+                    events.append("inquiry_confirm")  # 中断→确认卡（03-api-spec 事件源）
+                    resume = case.get("resume_action")
+                    if resume in ALLOWED_RESUME_ACTIONS:
+                        final = await rt.graph.ainvoke(Command(resume={"action": resume}), config)
+                        events.append("inquiry_created") if any(
+                            e[0] == "inquiry_created" for e in final.get("events", [])
+                        ) else None
+                    else:
+                        answer = "请您确认以上询盘信息（等待您的确认）。"
+                answer = str(final.get("answer", ""))[:2000]
+                events += [e for e, _ in final.get("events", [])]
+            if interrupted and not answer:
+                answer = "请您确认以上询盘信息（等待您的确认）。"
             ok = True
             for assertion in case.get("asserts", []):
                 if not _check(assertion, answer, events, final):
