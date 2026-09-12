@@ -12,6 +12,7 @@ from typing import Annotated, Any, TypedDict
 
 import structlog
 from langgraph.graph import END, StateGraph
+from langgraph.types import interrupt
 
 from rfq_copilot.core.agent.llm import LLMClient
 from rfq_copilot.core.manifest import Manifest
@@ -289,28 +290,25 @@ def _inquiry_node(deps: GraphDeps) -> Any:
             idempotency_key=key,
         )
         pending = {"confirm_id": key[:16], "draft_json": draft.model_dump_json()}
-        store = deps.store.get_or_create(state["session_id"])
-        store.pending_confirm = pending
-        events.append(
-            (
-                "inquiry_confirm",
-                {
-                    "confirm_id": pending["confirm_id"],
-                    "draft": {
-                        "product_id": draft.product_id,
-                        "quantity": draft.quantity,
-                        "contact_name": contact.name,
-                        "contact_phone_masked": _mask(contact.phone),
-                        "missing_fields": [],
-                    },
-                },
-            )
-        )
         answer = (
             f"请您确认以下询盘信息：产品 {draft.product_id}，数量 {draft.quantity}，"
             f"联系人 {contact.name}（{_mask(contact.phone)}）。确认无误请回复“确认提交”。"
         )
-        return {"route": "inquiry_flow", "answer": answer, "events": events}
+        # Human-in-the-loop: pause execution; checkpoint persists state (thread_id = session_id).
+        # Resume via Command(resume={"action": "confirm_inquiry"|"cancel_inquiry"}) re-enters here.
+        approval = interrupt(pending)
+        action = (approval or {}).get("action")
+        if action != "confirm_inquiry":
+            answer = "已取消，本次不提交任何信息。"
+            return {"route": "inquiry_flow", "answer": answer, "events": events}
+        sink = deps.inquiry_sink
+        if sink is None:
+            events.append(("error", {"code": "PORT_DISABLED", "message": "询盘能力未启用"}))
+            return {"route": "inquiry_flow", "answer": "当前环境未接入询盘通道。", "events": events}
+        result = sink.create(draft)
+        events.append(("inquiry_created", {"inquiry_id": result.inquiry_id, "state": result.state}))
+        answer = "询盘已创建成功，供应商会尽快与您联系。"
+        return {"route": "inquiry_flow", "answer": answer, "events": events, "confirm_done": True}
 
     return node
 
@@ -319,33 +317,14 @@ def _mask(phone: str) -> str:
     return f"{phone[:3]}****{phone[-4:]}" if len(phone) >= 7 else phone
 
 
-def _confirm_node(deps: GraphDeps) -> Any:
-    async def node(state: AgentState) -> dict[str, Any]:
-        events: list[tuple[str, dict[str, Any]]] = []
-        store = deps.store.get_or_create(state["session_id"])
-        pending = store.pending_confirm
-        if state.get("action") == "cancel_inquiry" or pending is None:
-            store.pending_confirm = None
-            answer = "已取消，本次不提交任何信息。" if pending else "当前没有待确认的询盘。"
-            return {"route": "inquiry_flow", "answer": answer, "events": events}
-        if deps.inquiry_sink is None:
-            events.append(("error", {"code": "PORT_DISABLED", "message": "询盘能力未启用"}))
-            return {"route": "inquiry_flow", "answer": "当前环境未接入询盘通道。", "events": events}
-        draft = InquiryDraft.model_validate_json(str(pending["draft_json"]))
-        result = deps.inquiry_sink.create(draft)
-        store.pending_confirm = None
-        events.append(("inquiry_created", {"inquiry_id": result.inquiry_id, "state": result.state}))
-        answer = "询盘已创建成功，供应商会尽快与您联系。"
-        return {"route": "inquiry_flow", "answer": answer, "events": events, "confirm_done": True}
-
-    return node
-
-
 def _understand_node(deps: GraphDeps) -> Any:
     async def node(state: AgentState) -> dict[str, Any]:
         events: list[tuple[str, dict[str, Any]]] = [("status", {"message": "正在理解您的需求"})]
+        deps.store.append_message(state["session_id"], "user", state.get("message", ""))
         u = _understanding_from_tools(state, deps)
         if u is None:
+            history = deps.store.messages(state["session_id"])[-6:]
+            history_text = "\n".join(f"{m['role']}: {m['content'][:80]}" for m in history)
             system = deps.prompts.render(
                 "base_constitution",
                 display_name=deps.manifest.display_name,
@@ -357,7 +336,7 @@ def _understand_node(deps: GraphDeps) -> Any:
                     "intent_entity_extraction",
                     disabled_capabilities=deps.manifest.disabled_capabilities(),
                 )
-                + f"\n\n用户输入：{state.get('message', '')}"
+                + f"\n\n对话历史（最近轮次）：\n{history_text}\n\n用户输入：{state.get('message', '')}"
             )
             raw = await deps.llm.complete_json(system, user)
             u = parse_understanding(raw)
@@ -417,27 +396,18 @@ def _route_after_understand(state: AgentState) -> str:
     return state.get("route", "clarify")
 
 
-def build_graph(deps: GraphDeps) -> Any:
-    """Compile the M0 agent graph (entry routes confirm/cancel actions deterministically)."""
+def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
+    """Compile the agent graph. A checkpointer is REQUIRED for interrupt()/resume flows."""
     if not deps.refusal_policies and deps.manifest.disabled_capabilities():
         raise ConfigError("refusal policies must be derived from manifest before building graph")
 
-    async def entry_node(state: AgentState) -> dict[str, Any]:
-        return {}  # pure routing node
-
-    def route_entry(state: AgentState) -> str:
-        return "confirm" if state.get("action") in {"confirm_inquiry", "cancel_inquiry"} else "understand"
-
     builder: StateGraph[AgentState] = StateGraph(state_schema=AgentState)
-    builder.add_node("entry", entry_node)
     builder.add_node("understand", _understand_node(deps))
     builder.add_node("refuse", _refusal_node(deps))
     builder.add_node("handoff", _handoff_node(deps))
     builder.add_node("respond", _respond_node(deps))
     builder.add_node("inquiry", _inquiry_node(deps))
-    builder.add_node("confirm", _confirm_node(deps))
-    builder.set_entry_point("entry")
-    builder.add_conditional_edges("entry", route_entry, {"confirm": "confirm", "understand": "understand"})
+    builder.set_entry_point("understand")
     builder.add_conditional_edges(
         "understand",
         _route_after_understand,
@@ -451,6 +421,6 @@ def build_graph(deps: GraphDeps) -> Any:
             "clarify": "respond",
         },
     )
-    for name in ("refuse", "handoff", "respond", "inquiry", "confirm"):
+    for name in ("refuse", "handoff", "respond", "inquiry"):
         builder.add_edge(name, END)
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)

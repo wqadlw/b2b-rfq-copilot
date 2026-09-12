@@ -1,7 +1,6 @@
 """In-memory session store (M0). Production uses LangGraph PostgresSaver (M2)."""
 
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass
@@ -9,7 +8,6 @@ class SessionState:
     session_id: str
     user_ref: str | None = None
     messages: list[dict[str, str]] = field(default_factory=list)
-    pending_confirm: dict[str, Any] | None = None
 
 
 class SessionStore:

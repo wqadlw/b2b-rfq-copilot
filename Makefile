@@ -40,6 +40,9 @@ policy: ## Repo policy scan (secrets / private-site markers)
 eval: ## Run evaluation baseline (seed cases + B derivation)
 	$(PY) python scripts/run_eval.py
 
+eval-live: ## Run live evaluation (requires .env with LLM+Embedding keys)
+	$(PY) python scripts/run_eval.py --live
+
 frontend-install: ## Install frontend deps only
 	cd $(FRONTEND_DIR) && pnpm install
 

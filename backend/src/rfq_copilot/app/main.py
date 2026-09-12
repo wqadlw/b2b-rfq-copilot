@@ -7,8 +7,10 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from langgraph.types import Command
 
 from rfq_copilot.app.runtime import Runtime, build_runtime, seed_demo, ui_config
+from rfq_copilot.app.sse_mapper import map_graph_stream
 from rfq_copilot.schemas.chat import (
     ChatRequest,
     FeedbackRequest,
@@ -17,7 +19,6 @@ from rfq_copilot.schemas.chat import (
     SessionCreateResponse,
     UiConfigResponse,
 )
-from rfq_copilot.schemas.events import sse_text
 
 _RUNTIME: Runtime | None = None
 
@@ -47,30 +48,26 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/chat/stream")
     async def chat_stream(body: ChatRequest) -> StreamingResponse:
         rt = get_runtime()
-        rt.store.append_message(body.session_id, "user", body.message)
-        state: dict[str, Any] = {
-            "session_id": body.session_id,
-            "user_ref": body.user_ref,
-            "message": body.message,
-            "action": body.action,
-            "contact": body.contact.model_dump() if body.contact else None,
-            "quantity": body.quantity,
-            "product_id": body.product_id,
-            "events": [],
-            "tool_calls": [],
-        }
-        final: dict[str, Any] = await rt.graph.ainvoke(state)
-        events: list[tuple[str, dict[str, Any]]] = list(final.get("events", []))
-        answer = final.get("answer", "")
-        if answer:
-            events.append(("answer_delta", {"delta": answer}))
-            rt.store.append_message(body.session_id, "assistant", answer)
-        events.append(("done", {"finish_reason": "answered"}))
-        return StreamingResponse(_stream(events), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
-
-    async def _stream(events: list[tuple[str, dict[str, Any]]]) -> AsyncIterator[str]:
-        for name, data in events:
-            yield sse_text([(name, data)])
+        config: dict[str, Any] = {"configurable": {"thread_id": body.session_id}}
+        if body.action:
+            # resume an interrupted confirmation (interrupt()/Command pattern)
+            graph_input: Any = Command(resume={"action": body.action})
+        else:
+            graph_input = {
+                "session_id": body.session_id,
+                "user_ref": body.user_ref,
+                "message": body.message,
+                "contact": body.contact.model_dump() if body.contact else None,
+                "quantity": body.quantity,
+                "product_id": body.product_id,
+                "events": [],
+                "tool_calls": [],
+            }
+        return StreamingResponse(
+            map_graph_stream(rt, graph_input, config),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     @app.get("/api/v1/ui-config", response_model=UiConfigResponse)
     async def ui_config_route() -> UiConfigResponse:

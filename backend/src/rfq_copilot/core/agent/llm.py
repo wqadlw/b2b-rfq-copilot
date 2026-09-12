@@ -59,8 +59,10 @@ class FakeLLM:
 
     def __init__(self, scripted: list[dict[str, Any]]) -> None:
         self._scripted = list(scripted)
+        self.calls: list[tuple[str, str]] = []
 
     async def complete_json(self, system: str, user: str) -> dict[str, Any]:
+        self.calls.append((system, user))
         if not self._scripted:
             raise AssertionError("FakeLLM exhausted")
         return self._scripted.pop(0)

@@ -1,6 +1,10 @@
 """Integration: agent graph flows — refusal, confirmation gate, poisoning isolation."""
 
+import contextlib
+
 import pytest
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command
 
 from conftest import make_deps, understanding
 from rfq_copilot.core.agent.graph import build_graph
@@ -34,9 +38,10 @@ async def test_inquiry_missing_required_fields_clarifies() -> None:
     assert ports.store.inquiries == []
 
 
-async def test_confirmation_gate_full_flow() -> None:
+async def test_confirmation_gate_interrupt_and_resume() -> None:
     deps, ports = make_deps(scripted=[understanding("product_inquiry", "inquiry_flow")])
-    graph = build_graph(deps)
+    graph = build_graph(deps, checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": "s4"}}
     first = await graph.ainvoke(
         {
             "session_id": "s4",
@@ -44,20 +49,23 @@ async def test_confirmation_gate_full_flow() -> None:
             "quantity": 10,
             "product_id": "demo-p-001",
             "contact": {"name": "张三", "phone": "13800000000"},
-        }
+        },
+        config,
     )
-    names = [e for e, _ in first["events"]]
-    assert "inquiry_confirm" in names and "inquiry_created" not in names
+    interrupts = first.get("__interrupt__") or []
+    assert interrupts, "expected graph to pause on confirmation gate"
+    assert interrupts[0].value["confirm_id"]
     assert ports.store.inquiries == []  # gate holds: nothing written before explicit confirm
 
-    second = await graph.ainvoke({"session_id": "s4", "message": "", "action": "confirm_inquiry"})
+    second = await graph.ainvoke(Command(resume={"action": "confirm_inquiry"}), config)
     assert "inquiry_created" in [e for e, _ in second["events"]]
     assert len(ports.store.inquiries) == 1
 
 
-async def test_confirmation_replay_is_idempotent() -> None:
+async def test_confirmation_cancel_writes_nothing() -> None:
     deps, ports = make_deps(scripted=[understanding("product_inquiry", "inquiry_flow")])
-    graph = build_graph(deps)
+    graph = build_graph(deps, checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": "s5"}}
     await graph.ainvoke(
         {
             "session_id": "s5",
@@ -65,11 +73,48 @@ async def test_confirmation_replay_is_idempotent() -> None:
             "quantity": 10,
             "product_id": "demo-p-001",
             "contact": {"name": "张三", "phone": "13800000000"},
-        }
+        },
+        config,
     )
-    await graph.ainvoke({"session_id": "s5", "message": "", "action": "confirm_inquiry"})
-    await graph.ainvoke({"session_id": "s5", "message": "", "action": "confirm_inquiry"})
+    final = await graph.ainvoke(Command(resume={"action": "cancel_inquiry"}), config)
+    assert "inquiry_created" not in [e for e, _ in final["events"]]
+    assert "已取消" in final["answer"]
+    assert ports.store.inquiries == []
+
+
+async def test_confirmation_idempotent_after_completion() -> None:
+    deps, ports = make_deps(scripted=[understanding("product_inquiry", "inquiry_flow")])
+    graph = build_graph(deps, checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": "s6"}}
+    state = {
+        "session_id": "s6",
+        "message": "询价 demo-p-001，10 台。",
+        "quantity": 10,
+        "product_id": "demo-p-001",
+        "contact": {"name": "张三", "phone": "13800000000"},
+    }
+    await graph.ainvoke(state, config)
+    await graph.ainvoke(Command(resume={"action": "confirm_inquiry"}), config)
+    # resuming a completed thread must not create a second inquiry
+    with contextlib.suppress(Exception):  # langgraph raises when no interrupt is pending
+        await graph.ainvoke(Command(resume={"action": "confirm_inquiry"}), config)
     assert len(ports.store.inquiries) == 1
+
+
+async def test_multi_turn_memory_accumulates_history() -> None:
+    scripted = [
+        understanding("product_inquiry", "product_flow"),
+        understanding("product_inquiry", "product_flow"),
+        understanding("product_inquiry", "inquiry_flow"),
+    ]
+    deps, _ = make_deps(scripted=scripted)
+    graph = build_graph(deps)
+    await graph.ainvoke({"session_id": "s7", "message": "找无油泵"}, {"configurable": {"thread_id": "x"}})
+    await graph.ainvoke({"session_id": "s7", "message": "抽速 100 的"}, {"configurable": {"thread_id": "x"}})
+    assert len(deps.store.messages("s7")) == 2  # 用户侧消息由 understand 节点落库；助手侧在 mapper
+    assert len(deps.llm.calls) == 2
+    second_prompt = deps.llm.calls[1][1]
+    assert "找无油泵" in second_prompt  # 前轮内容进入后续提示词 = 实体累积
 
 
 async def test_product_flow_cites_and_neutral() -> None:

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from langgraph.checkpoint.memory import MemorySaver
+
 from rfq_copilot.adapters.demo import data as demo_data
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.core.agent.graph import GraphDeps, build_graph
@@ -91,7 +93,8 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
         lead_distribution=ports.lead_distribution if manifest.ports.lead_distribution.enabled else None,
         poisoned_ids=POISONED_IDS,
     )
-    return Runtime(manifest=manifest, deps=deps, graph=build_graph(deps), store=store)
+    graph = build_graph(deps, checkpointer=MemorySaver())  # demo profile; prod swaps AsyncPostgresSaver
+    return Runtime(manifest=manifest, deps=deps, graph=graph, store=store)
 
 
 def ui_config(runtime: Runtime) -> dict[str, Any]:
