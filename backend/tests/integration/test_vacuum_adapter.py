@@ -61,6 +61,18 @@ async def test_search_maps_payload() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_search_forwards_query_params() -> None:
+    """回归：get_json 必须透传 params（曾因丢弃 params 导致站点侧过滤失效）。"""
+    _, catalog = _ports()
+    route = respx.get(f"{BASE}/internal-api/v1/products/search").respond(200, json={"items": [], "total": 0})
+    await catalog.search(ProductSearchQuery(keyword="2XZ", page=2, page_size=5))
+    assert route.called
+    sent = route.calls[0].request.url.params
+    assert sent["keyword"] == "2XZ" and sent["page"] == "2" and sent["page_size"] == "5"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_server_error_retries_then_raises() -> None:
     _, catalog = _ports()
     route = respx.get(f"{BASE}/internal-api/v1/products/search").respond(500)

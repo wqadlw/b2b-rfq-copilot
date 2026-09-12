@@ -106,9 +106,7 @@ def _run_live(cases: list[dict]) -> tuple[Counter, list[str]]:
         for case in cases:
             session_id = "evalcase-" + str(abs(hash(case["id"])) % 10_000_000_00)
             config = {"configurable": {"thread_id": session_id}}
-            expects_created = any(
-                "inquiry_created" in a.get("must_include", []) for a in case.get("asserts", [])
-            )
+            expects_created = any("inquiry_created" in a.get("must_include", []) for a in case.get("asserts", []))
             supply_contact = expects_created
             answer, events = "", []
             for turn_index, turn in enumerate(case["turns"]):

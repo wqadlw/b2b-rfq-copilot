@@ -42,14 +42,20 @@ class VacuumInternalClient:
             reraise=True,
         )
 
-    async def _request(self, method: str, path: str, json_body: dict[str, Any] | None = None) -> Any:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
         url = f"{self._base_url}{path}"
         resp: httpx.Response | None = None
         try:
             async for attempt in self._retry:
                 with attempt:
                     async with httpx.AsyncClient(timeout=HARD_TIMEOUT, trust_env=False) as client:
-                        resp = await client.request(method, url, json=json_body, headers=self._headers)
+                        resp = await client.request(method, url, json=json_body, params=params, headers=self._headers)
                         if resp.status_code >= 500:
                             resp.raise_for_status()  # 5xx joins the retryable family
         except httpx.HTTPStatusError as exc:
@@ -64,7 +70,7 @@ class VacuumInternalClient:
         return resp
 
     async def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        resp = await self._request("GET", path)
+        resp = await self._request("GET", path, params=params)
         if resp.status_code == 404:
             return None
         if resp.status_code != 200:
@@ -72,7 +78,7 @@ class VacuumInternalClient:
         return resp.json()
 
     async def get_json_or_error(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        resp = await self._request("GET", path)
+        resp = await self._request("GET", path, params=params)
         if resp.status_code == 404:
             raise UpstreamUnavailableError(f"missing resource: {path}")
         if resp.status_code != 200:
