@@ -87,7 +87,8 @@ async def test_poisoned_knowledge_content_never_enters_answer() -> None:
     final = await graph.ainvoke({"session_id": "s7", "message": "无油泵采购避坑"})
     assert "全站最优" not in final["answer"]
     assert "6,800" not in final["answer"]
-    assert "[KB:" in final["answer"]  # citation present, content itself never quoted
+    assert "[1]" in final["answer"]  # short-ID citation present
+    assert "（merchant）" in final["answer"] or "（platform）" in final["answer"]  # trust labeled
 
 
 async def test_handoff_event_emitted() -> None:

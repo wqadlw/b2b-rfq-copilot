@@ -2,12 +2,13 @@
 
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
-from rfq_copilot.app.runtime import Runtime, build_runtime, ui_config
+from rfq_copilot.app.runtime import Runtime, build_runtime, seed_demo, ui_config
 from rfq_copilot.schemas.chat import (
     ChatRequest,
     FeedbackRequest,
@@ -29,7 +30,12 @@ def get_runtime() -> Runtime:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="b2b-rfq-copilot", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        await seed_demo(get_runtime())
+        yield
+
+    app = FastAPI(title="b2b-rfq-copilot", version="0.1.0", lifespan=lifespan)
 
     @app.post("/api/v1/sessions", response_model=SessionCreateResponse)
     async def create_session(body: SessionCreateRequest) -> SessionCreateResponse:

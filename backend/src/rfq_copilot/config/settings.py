@@ -16,6 +16,17 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "demo-model"
 
+    embedding_provider: str = "hashing"
+    embedding_base_url: str = "https://llm.example.invalid/v1"
+    embedding_api_key: str = ""
+    embedding_model: str = "BAAI/bge-m3"
+    rerank_provider: str = "none"
+    rerank_base_url: str = ""
+    rerank_api_key: str = ""
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+
+    database_url: str = "postgresql://rfq:rfq@localhost:5432/rfq"
+
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

@@ -1,7 +1,7 @@
-"""Minimal LangGraph agent (M0): understand → deterministic route → respond.
+"""Minimal LangGraph agent (M0/M1): understand → deterministic route → respond.
 
 M2 will expand: real answer generation, checkpointer, full tool loop. Policy layer
-(refusal/output-filter/confirmation-gate) is already authoritative here.
+(refusal/output-filter/confirmation-gate) and the M1 RAG pipeline are wired here.
 """
 
 import hashlib
@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Annotated, Any, TypedDict
 
+import structlog
 from langgraph.graph import END, StateGraph
 
 from rfq_copilot.core.agent.llm import LLMClient
@@ -18,7 +19,8 @@ from rfq_copilot.core.memory import SessionStore
 from rfq_copilot.core.policies.output_filter import filter_output
 from rfq_copilot.core.policies.refusal import RefusalPolicy, refusal_answer
 from rfq_copilot.core.prompts import PromptRegistry
-from rfq_copilot.core.rag.retriever import KeywordRetriever
+from rfq_copilot.core.rag.citation import validate_citations
+from rfq_copilot.core.rag.pipeline import RAGPipeline
 from rfq_copilot.ports.errors import ConfigError
 from rfq_copilot.ports.inquiry_sink import AiExtract, Contact, InquiryDraft, InquirySinkPort
 from rfq_copilot.ports.lead_distribution import LeadDistributionPort
@@ -42,6 +44,7 @@ INTENT_ENUM = frozenset(
         "unknown",
     }
 )
+logger = structlog.get_logger(__name__)
 REFUSAL_REASON_TO_CAPABILITY = {
     "pricing_disabled": "pricing",
     "lead_time_disabled": "lead_time",
@@ -91,7 +94,7 @@ class GraphDeps:
     store: SessionStore
     catalog: ProductCatalogPort | None = None
     suppliers: SupplierDirectoryPort | None = None
-    retriever: KeywordRetriever | None = None
+    rag: RAGPipeline | None = None
     inquiry_sink: InquirySinkPort | None = None
     lead_distribution: LeadDistributionPort | None = None
     poisoned_ids: frozenset[str] = field(default_factory=frozenset)
@@ -107,8 +110,8 @@ class GraphDeps:
                 tools["get_product_detail"] = self.catalog.get_detail
         if self.manifest.ports.supplier_directory.enabled and self.suppliers is not None:
             tools["get_suppliers"] = self.suppliers.search
-        if self.manifest.ports.knowledge_source.enabled and self.retriever is not None:
-            tools["search_knowledge"] = self.retriever.retrieve
+        if self.manifest.ports.knowledge_source.enabled and self.rag is not None:
+            tools["search_knowledge"] = self.rag.search
         if self.manifest.ports.inquiry_sink.enabled and self.inquiry_sink is not None:
             tools["create_inquiry"] = self.inquiry_sink.create
         if self.manifest.ports.lead_distribution.enabled and self.lead_distribution is not None:
@@ -208,12 +211,16 @@ def _respond_node(deps: GraphDeps) -> Any:
                 lines.append(f"1. {item.name}（{item.supplier_name}）{specs}；价格：{price}。详情：{item.url}")
                 events.append(("citation", {"title": item.name, "url": item.url, "trust": "merchant"}))
             answer = "\n".join(lines) if result.items else "暂未找到匹配产品，您可以补充关键词或提交询盘。"
-        elif route == "knowledge_flow" and "search_knowledge" in tools:
-            docs = await _call_tool(tools["search_knowledge"], message, top_k=3, poisoned_ids=deps.poisoned_ids)
-            events.append(("retrieval", {"count": len(docs), "trust": [d.trust_level for d in docs]}))
-            answer = "根据站内资料："
-            for doc in docs:
-                answer += f"\n- [KB:{doc.title}]（{doc.trust_level}）"
+        elif route == "knowledge_flow" and deps.rag is not None:
+            tool_calls.append("search_knowledge")
+            events.append(("tool_call", {"tool": "search_knowledge", "status": "running"}))
+            context, chunks = await deps.rag.context_for(message)
+            events.append(("retrieval", {"count": len(chunks), "trust": [c.trust_level for c in chunks]}))
+            lines = [f"[{i + 1}] {c.title}（{c.trust_level}）" for i, c in enumerate(chunks)]
+            answer = "根据站内资料：" + context + "\n" + "\n".join(lines)
+            answer, invalid = validate_citations(answer, len(chunks))
+            if invalid:
+                logger.warning("citation.invalid", invalid=invalid)  # programmatic citations never trigger
             answer += "\n如需进一步确认，欢迎提交询盘。"
         else:
             answer = "请补充更多信息，例如目标真空度、抽速、应用场景，我来帮您缩小范围。"

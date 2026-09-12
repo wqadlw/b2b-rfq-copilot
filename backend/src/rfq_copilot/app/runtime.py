@@ -1,10 +1,11 @@
-"""Runtime assembly: manifest → ports → graph (app is the only composition root)."""
+"""Runtime assembly: manifest → ports → RAG pipeline → graph (app is the only composition root)."""
 
 import importlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rfq_copilot.adapters.demo import data as demo_data
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.core.agent.graph import GraphDeps, build_graph
 from rfq_copilot.core.agent.llm import LLMClient, OpenAICompatLLM
@@ -12,7 +13,11 @@ from rfq_copilot.core.manifest import Manifest, load_manifest
 from rfq_copilot.core.memory import SessionStore
 from rfq_copilot.core.policies.refusal import derive_refusal_policies
 from rfq_copilot.core.prompts import PromptRegistry
-from rfq_copilot.core.rag.retriever import KeywordRetriever
+from rfq_copilot.core.rag.chunking import chunk_document
+from rfq_copilot.core.rag.embedding import HashingEmbedder, OpenAICompatEmbedder
+from rfq_copilot.core.rag.pipeline import RAGPipeline
+from rfq_copilot.core.rag.reranker import NoopReranker
+from rfq_copilot.core.rag.store import InMemoryVectorStore
 from rfq_copilot.ports.errors import ConfigError
 
 ADAPTERS_DIR = Path(__file__).resolve().parent.parent / "adapters"
@@ -34,6 +39,34 @@ def _adapter_module(adapter: str) -> Any:
         raise ConfigError(f"adapter implementation not found: {adapter}") from exc
 
 
+def _build_embedder(settings: Any) -> HashingEmbedder | OpenAICompatEmbedder:
+    if settings.embedding_provider == "openai_compatible":
+        return OpenAICompatEmbedder(
+            base_url=settings.embedding_base_url,
+            api_key=settings.embedding_api_key,
+            model=settings.embedding_model,
+        )
+    return HashingEmbedder()
+
+
+def _build_rag(settings: Any, manifest: Manifest) -> RAGPipeline | None:
+    """Build the pipeline with an empty store; seeding happens at app startup (async)."""
+    if not manifest.ports.knowledge_source.enabled:
+        return None
+    embedder = _build_embedder(settings)
+    return RAGPipeline(embedder=embedder, store=InMemoryVectorStore(), reranker=NoopReranker())
+
+
+async def seed_demo(runtime: Runtime) -> None:
+    """Seed the in-memory store with demo docs (skipped when already seeded)."""
+    rag = runtime.deps.rag
+    if rag is None or rag._store.count() > 0:  # noqa: SLF001 — runtime owns its pipeline
+        return
+    docs = list(demo_data.DOCS) + list(demo_data.POISON_DOCS)
+    chunks = [chunk for doc in docs for chunk in chunk_document(doc)]
+    await rag.ingest(chunks)
+
+
 def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtime:
     adapter_dir = ADAPTERS_DIR / adapter
     manifest = load_manifest(adapter_dir)  # V1~V7 validation (V2 via module import below)
@@ -44,7 +77,7 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
         base_url=settings.llm_base_url, api_key=settings.llm_api_key, model=settings.llm_model
     )
     store = SessionStore()
-    retriever = KeywordRetriever(ports.knowledge) if manifest.ports.knowledge_source.enabled else None
+    rag = _build_rag(settings, manifest)
     deps = GraphDeps(
         manifest=manifest,
         llm=client,
@@ -53,7 +86,7 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
         store=store,
         catalog=ports.catalog if manifest.ports.product_catalog.enabled else None,
         suppliers=ports.suppliers if manifest.ports.supplier_directory.enabled else None,
-        retriever=retriever,
+        rag=rag,
         inquiry_sink=ports.inquiry_sink if manifest.ports.inquiry_sink.enabled else None,
         lead_distribution=ports.lead_distribution if manifest.ports.lead_distribution.enabled else None,
         poisoned_ids=POISONED_IDS,
