@@ -3,14 +3,16 @@
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import type { ChatEventData, ChatEventName, UiConfig } from "./types";
 
+const ENDPOINT = (window as unknown as { RFQ_ENDPOINT?: string }).RFQ_ENDPOINT ?? "";
+
 export async function fetchUiConfig(): Promise<UiConfig> {
-  const res = await fetch("/api/v1/ui-config");
+  const res = await fetch(`${ENDPOINT}/api/v1/ui-config`);
   if (!res.ok) throw new Error(`ui-config ${res.status}`);
   return (await res.json()) as UiConfig;
 }
 
 export async function createSession(userRef: string | null = null): Promise<string> {
-  const res = await fetch("/api/v1/sessions", {
+  const res = await fetch(`${ENDPOINT}/api/v1/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_ref: userRef }),
@@ -32,7 +34,7 @@ interface StreamOptions {
 
 export async function streamChat(options: StreamOptions): Promise<void> {
   const { onEvent, ...body } = options;
-  await fetchEventSource("/api/v1/chat/stream", {
+  await fetchEventSource(`${ENDPOINT}/api/v1/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

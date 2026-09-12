@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
@@ -38,6 +39,16 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="b2b-rfq-copilot", version="0.1.0", lifespan=lifespan)
 
+    # CORS：宿主站点跨域嵌入（M4-c）；凭据头部走显式白名单方式，不使用通配 *
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"https?://.*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+
     @app.post("/api/v1/sessions", response_model=SessionCreateResponse)
     async def create_session(body: SessionCreateRequest) -> SessionCreateResponse:
         rt = get_runtime()
@@ -66,7 +77,10 @@ def create_app() -> FastAPI:
         return StreamingResponse(
             map_graph_stream(rt, graph_input, config),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache"},
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # 关键：Nginx/反代禁缓冲，SSE 实时到达
+            },
         )
 
     @app.get("/api/v1/ui-config", response_model=UiConfigResponse)

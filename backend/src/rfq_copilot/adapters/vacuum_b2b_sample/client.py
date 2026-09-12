@@ -48,7 +48,7 @@ class VacuumInternalClient:
         try:
             async for attempt in self._retry:
                 with attempt:
-                    async with httpx.AsyncClient(timeout=HARD_TIMEOUT) as client:
+                    async with httpx.AsyncClient(timeout=HARD_TIMEOUT, trust_env=False) as client:
                         resp = await client.request(method, url, json=json_body, headers=self._headers)
                         if resp.status_code >= 500:
                             resp.raise_for_status()  # 5xx joins the retryable family
