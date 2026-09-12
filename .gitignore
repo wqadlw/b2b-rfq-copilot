@@ -1,0 +1,32 @@
+# ===== 密钥与环境 =====
+.env
+.env.*
+!.env.example
+
+# ===== 内部治理（人类终裁：.ai 不公开，ADR-007）=====
+.ai/
+AGENTS.md
+PROJECT.md
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# ===== 前端（聊天组件二期）=====
+node_modules/
+
+# ===== IDE / OS =====
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
