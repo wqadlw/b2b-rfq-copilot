@@ -54,6 +54,7 @@ class PgVectorKnowledgeSource(KnowledgeSourcePort):
 
         conn = await asyncpg.connect(self._dsn)
         try:
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
             await conn.execute(
                 """CREATE TABLE IF NOT EXISTS knowledge_chunks (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
