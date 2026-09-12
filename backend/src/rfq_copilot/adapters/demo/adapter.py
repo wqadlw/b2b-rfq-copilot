@@ -42,7 +42,7 @@ def _zh_terms(query: str) -> set[str]:
 
 
 class DemoProductCatalog(ProductCatalogPort):
-    def search(self, query: ProductSearchQuery) -> ProductSearchResult:
+    async def search(self, query: ProductSearchQuery) -> ProductSearchResult:
         kw = query.keyword.strip()
         if not kw:
             hits = list(data.PRODUCTS)
@@ -58,12 +58,12 @@ class DemoProductCatalog(ProductCatalogPort):
         items = [ProductSummary.model_validate(p.model_dump()) for p in page]
         return ProductSearchResult(items=items, total=len(hits))
 
-    def get_detail(self, product_id: str) -> ProductDetail | None:
+    async def get_detail(self, product_id: str) -> ProductDetail | None:
         return next((p for p in data.PRODUCTS if p.id == product_id), None)
 
 
 class DemoSupplierDirectory(SupplierDirectoryPort):
-    def search(self, query: SupplierSearchQuery) -> SupplierSearchResult:
+    async def search(self, query: SupplierSearchQuery) -> SupplierSearchResult:
         if query.product_id:
             supplier_id = next((p.supplier_id for p in data.PRODUCTS if p.id == query.product_id), None)
             hits = [s for s in data.SUPPLIERS if s.id == supplier_id] if supplier_id else []
@@ -73,7 +73,7 @@ class DemoSupplierDirectory(SupplierDirectoryPort):
         items = [SupplierSummary.model_validate(s.model_dump()) for s in hits[: query.page_size]]
         return SupplierSearchResult(items=items, total=len(hits))
 
-    def get_detail(self, supplier_id: str) -> SupplierDetail | None:
+    async def get_detail(self, supplier_id: str) -> SupplierDetail | None:
         return next((s for s in data.SUPPLIERS if s.id == supplier_id), None)
 
 
@@ -101,7 +101,7 @@ class DemoInquirySink(InquirySinkPort):
     def __init__(self, store: DemoInquiryStore) -> None:
         self._store = store
 
-    def create(self, draft: InquiryDraft) -> InquiryResult:
+    async def create(self, draft: InquiryDraft) -> InquiryResult:
         if draft.idempotency_key in self._store.keys:
             existing = next(i for i in self._store.inquiries if i["idempotency_key"] == draft.idempotency_key)
             return InquiryResult(inquiry_id=existing["inquiry_id"], state="created")
@@ -120,7 +120,7 @@ class DemoInquirySink(InquirySinkPort):
 
 
 class DemoLeadDistribution(LeadDistributionPort):
-    def submit(self, lead: LeadCandidate) -> DistributionResult:
+    async def submit(self, lead: LeadCandidate) -> DistributionResult:
         logger.info("demo lead candidate logged: %s score=%s", lead.inquiry_id, lead.lead_score)
         return DistributionResult(distributed=False, channel="log", reference_id=lead.inquiry_id)
 

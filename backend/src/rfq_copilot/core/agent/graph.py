@@ -100,6 +100,13 @@ class GraphDeps:
     lead_distribution: LeadDistributionPort | None = None
     poisoned_ids: frozenset[str] = field(default_factory=frozenset)
 
+    def tool_guard(self, name: str) -> None:
+        """Explicit interception: a hallucinated/disabled tool call is denied at code level."""
+        if name not in self.tool_registry():
+            from rfq_copilot.ports.errors import CapabilityDisabledError
+
+            raise CapabilityDisabledError(name)
+
     def tool_registry(self) -> dict[str, Any]:
         """Tools physically registered from manifest; disabled capabilities never appear here."""
         tools: dict[str, Any] = {}
@@ -305,7 +312,7 @@ def _inquiry_node(deps: GraphDeps) -> Any:
         if sink is None:
             events.append(("error", {"code": "PORT_DISABLED", "message": "询盘能力未启用"}))
             return {"route": "inquiry_flow", "answer": "当前环境未接入询盘通道。", "events": events}
-        result = sink.create(draft)
+        result = await _call_tool(sink.create, draft)
         events.append(("inquiry_created", {"inquiry_id": result.inquiry_id, "state": result.state}))
         answer = "询盘已创建成功，供应商会尽快与您联系。"
         return {"route": "inquiry_flow", "answer": answer, "events": events, "confirm_done": True}
