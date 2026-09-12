@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+/* Industrial AI Clean tokens (authority: docs/FRONTEND_STYLE_GUIDE.md §3) */
+@theme {
+  --color-background: #fafafa;
+  --color-surface: #ffffff;
+  --color-line: #e4e4e7;
+  --color-ink: #18181b;
+  --color-ink-secondary: #52525b;
+  --color-ink-muted: #a1a1aa;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #dbeafe;
+  --color-accent: #06b6d4;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-ink);
+  font-family: "Inter", "Noto Sans SC", system-ui, sans-serif;
+}
+
+code,
+.mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}

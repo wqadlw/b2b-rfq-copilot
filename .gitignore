@@ -30,3 +30,7 @@ node_modules/
 .vscode/
 Thumbs.db
 .DS_Store
+
+# ===== 评测产物（脚本生成，不提交）=====
+eval/reports/
+eval/generated/

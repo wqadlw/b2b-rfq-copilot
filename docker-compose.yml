@@ -1,0 +1,55 @@
+# Demo profile by default: backend (SQLite/in-memory) + frontend.
+# `--profile prod` adds postgres+pgvector (M1 RAG / M2 checkpointer).
+# Langfuse deliberately omitted from compose: enable via cloud or self-host later (ADR-0001).
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - APP_ENV=demo
+      - DATABASE_URL=${DATABASE_URL:-postgresql://rfq:rfq@postgres:5432/rfq}
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    profiles: ["prod"]
+    environment:
+      POSTGRES_USER: rfq
+      POSTGRES_PASSWORD: rfq
+      POSTGRES_DB: rfq
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rfq"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

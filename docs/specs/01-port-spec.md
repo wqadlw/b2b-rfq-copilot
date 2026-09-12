@@ -139,7 +139,7 @@ class SupplierDirectoryPort(Protocol):
 ```python
 class KnowledgeSourcePort(Protocol):
     def iter_documents(self, scope: IngestScope | None = None) -> Iterator[KnowledgeDocument]: ...
-    def fingerprint(self) -> str: ...   # 内容指纹，用于增量同步判断
+    def fingerprint(self) -> str: ...  # 内容指纹，用于增量同步判断
 ```
 
 `KnowledgeDocument`: `doc_id, title, doc_type: Literal[platform_faq, selection_guide, policy, product, merchant_article], trust_level: Literal[platform, merchant, ugc], content: str, metadata: {product_id?, supplier_id?, category_id?, version, updated_at?}, language`。
