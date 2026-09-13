@@ -33,9 +33,18 @@ export interface ChatEventData {
   message?: string;
   tool?: string;
   confirm_id?: string;
+  index?: number;
+  title?: string;
+  trust?: string;
   inquiry_id?: string | number;
   code?: string;
   reason?: string;
+}
+
+export interface Citation {
+  index: number;
+  title: string;
+  trust: string;
 }
 
 export interface ChatMessage {
@@ -43,4 +52,5 @@ export interface ChatMessage {
   content: string;
   statusLine?: string;
   inquiryCreated?: boolean;
+  citations?: Citation[];
 }

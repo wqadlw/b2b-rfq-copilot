@@ -362,10 +362,10 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
     }
     for intent, capability in policy_by_intent.items():
         markers = {
-            "price_inquiry": ("多少钱", "价格", "报价", "区间"),
+            "price_inquiry": ("多少钱", "价格", "报价", "区间", "元"),
             "discount_inquiry": ("折扣", "优惠"),
-            "lead_time_inquiry": ("货期", "交期", "交货", "多久"),
-            "stock_inquiry": ("有货", "库存"),
+            "lead_time_inquiry": ("货期", "交期", "交货", "多久", "几周", "能到"),
+            "stock_inquiry": ("有货", "库存", "现货"),
         }.get(intent, ())
         if any(m in message for m in markers):
             reason = {

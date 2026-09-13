@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type R
 import { Bot, SendHorizonal, User } from "lucide-react";
 import { Button } from "../ui/button";
 import { CapabilityBadge } from "./CapabilityBadge";
+import { CitationCard } from "./CitationCard";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { createSession, fetchUiConfig, streamChat } from "../../lib/api";
@@ -79,6 +80,13 @@ export function ChatWidget(): ReactElement {
             updateLast({ statusLine: data.message ?? `正在调用 ${data.tool ?? "工具"}…` });
           } else if (name === "answer_delta" && data.delta) {
             appendDelta(data.delta);
+          } else if (name === "citation" && data.title) {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last === undefined) return prev;
+              const list = [...(last.citations ?? []), { index: data.index ?? 0, title: String(data.title), trust: String(data.trust ?? "merchant") }];
+              return [...prev.slice(0, -1), { ...last, citations: list }];
+            });
           } else if (name === "inquiry_confirm") {
             setPendingConfirm(data.confirm_id ?? null);
           } else if (name === "inquiry_created") {
@@ -152,7 +160,16 @@ export function ChatWidget(): ReactElement {
           </div>
         )}
         {messages.map((message, index) => (
-          <MessageBubble key={index} message={message} streaming={busy && index === messages.length - 1} />
+          <div key={index} className="flex flex-col gap-1">
+            <MessageBubble message={message} streaming={busy && index === messages.length - 1} />
+            {message.citations && message.citations.length > 0 && (
+              <div className="ml-8 flex flex-wrap gap-1">
+                {message.citations.map((c, ci) => (
+                  <CitationCard key={ci} citation={c} />
+                ))}
+              </div>
+            )}
+          </div>
         ))}
         {pendingConfirm && (
           <div className="ml-auto w-[88%] rounded-xl border border-warning/60 bg-warning/10 p-3">

@@ -5,11 +5,12 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
+from rfq_copilot.app.limiter import SlidingWindowLimiter
 from rfq_copilot.app.runtime import Runtime, build_runtime, seed_demo, ui_config
 from rfq_copilot.app.sse_mapper import map_graph_stream
 from rfq_copilot.schemas.chat import (
@@ -20,8 +21,10 @@ from rfq_copilot.schemas.chat import (
     SessionCreateResponse,
     UiConfigResponse,
 )
+from rfq_copilot.schemas.events import sse_text
 
 _RUNTIME: Runtime | None = None
+_LIMITER = SlidingWindowLimiter()
 
 
 def get_runtime() -> Runtime:
@@ -57,8 +60,15 @@ def create_app() -> FastAPI:
         return SessionCreateResponse(session_id=session_id, token=f"tok_{uuid.uuid4().hex[:8]}")
 
     @app.post("/api/v1/chat/stream")
-    async def chat_stream(body: ChatRequest) -> StreamingResponse:
+    async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         rt = get_runtime()
+        if not _LIMITER.allow(session_id=body.session_id, ip=request.client.host if request.client else None):
+
+            async def _limited() -> AsyncIterator[str]:
+                yield sse_text([("error", {"code": "RATE_LIMITED", "message": "请求过于频繁，请稍后再试"})])
+                yield sse_text([("done", {"finish_reason": "rate_limited"})])
+
+            return StreamingResponse(_limited(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
         config: dict[str, Any] = {"configurable": {"thread_id": body.session_id}}
         if body.action:
             # resume an interrupted confirmation (interrupt()/Command pattern)

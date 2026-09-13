@@ -49,10 +49,14 @@ def load_cases() -> tuple[list[dict], list[str]]:
     return cases, errors
 
 
-def derive_b_placeholders() -> list[str]:
-    disabled = ["pricing", "lead_time", "stock"]
-    templates = ["direct_ask", "range_request", "fake_context_table", "poisoned_instruction", "persistence_loop"]
-    return [f"B__{capability}__{template}" for capability in disabled for template in templates]
+def derive_b_cases() -> list[dict[str, Any]]:
+    """实装派生器：从 demo manifest 生成可执行 B 族用例（port-spec §5/§7）。"""
+    sys.path.insert(0, str(ROOT / "backend" / "src"))
+    from rfq_copilot.core.eval.deriver import derive_b_cases as derive
+    from rfq_copilot.core.manifest import load_manifest
+
+    manifest = load_manifest(Path(ROOT) / "backend" / "src" / "rfq_copilot" / "adapters" / "demo")
+    return derive(manifest)
 
 
 def _check(assertion: dict[str, Any], answer: str, events: list[str], final: dict[str, Any]) -> bool:
@@ -82,6 +86,46 @@ def _check(assertion: dict[str, Any], answer: str, events: list[str], final: dic
         if assertion.get("path"):
             return u.get(assertion["path"]) == assertion.get("equals")
     return True
+
+
+def _run_b(b_cases: list[dict[str, Any]]) -> int:
+    """Execute derived B cases via the deterministic refusal path (no LLM)."""
+    sys.path.insert(0, str(ROOT / "backend" / "src"))
+    from rfq_copilot.core.agent.graph import GraphDeps, build_graph
+    from rfq_copilot.core.manifest import load_manifest
+    from rfq_copilot.core.memory import SessionStore
+    from rfq_copilot.core.policies.refusal import derive_refusal_policies
+    from rfq_copilot.core.prompts import PromptRegistry
+
+    adapter_dir = Path(ROOT) / "backend" / "src" / "rfq_copilot" / "adapters" / "demo"
+    manifest = load_manifest(adapter_dir)
+    deps = GraphDeps(
+        manifest=manifest,
+        llm=_NullLLM(),
+        prompts=PromptRegistry(),
+        refusal_policies=derive_refusal_policies(manifest),
+        store=SessionStore(),
+    )
+    graph = build_graph(deps)
+    passed = 0
+    for i, case in enumerate(b_cases):
+        import asyncio
+
+        final = asyncio.run(
+            graph.ainvoke(
+                {"session_id": f"b-{i}", "message": case["turns"][0]["content"]},
+                {"configurable": {"thread_id": f"b-{i}"}},
+            )
+        )
+        answer = str(final.get("answer", ""))
+        ok = all(_check(a, answer, [], final) for a in case["asserts"])
+        passed += int(ok)
+    return passed
+
+
+class _NullLLM:
+    async def complete_json(self, system: str, user: str) -> dict[str, Any]:
+        raise AssertionError("B-family refusals must be deterministic (no LLM)")
 
 
 def _run_live(cases: list[dict]) -> tuple[Counter, list[str]]:
@@ -162,6 +206,9 @@ def main() -> int:
     else:
         tally = Counter(case["family"] for case in cases)
         failures = []
+        b_cases = derive_b_cases()
+        tally["B"] = len(b_cases)
+        tally["B_pass"] = _run_b(b_cases)
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -174,7 +221,7 @@ def main() -> int:
         rate = f"{passed / total:.0%}" if total else "—"
         lines.append(f"| {family} | {total} | {passed} | {rate} |")
     if not args.live:
-        lines += ["", f"> B 族派生占位 {len(derive_b_placeholders())} 条；格式校验模式，live 执行加 --live。"]
+        lines += ["", f"> B 族派生用例 {len(derive_b_cases())} 条（已实机执行，见上方 B 行）。"]
     if failures:
         lines += ["", "## 失败明细", *(f"- {f}" for f in failures)]
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
