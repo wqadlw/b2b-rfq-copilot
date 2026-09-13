@@ -18,6 +18,7 @@ from langgraph.types import interrupt
 from rfq_copilot.core.agent.llm import LLMClient
 from rfq_copilot.core.manifest import Manifest
 from rfq_copilot.core.memory import SessionStore
+from rfq_copilot.core.policies.faq_matcher import FaqMatcher
 from rfq_copilot.core.policies.output_filter import filter_output
 from rfq_copilot.core.policies.refusal import RefusalPolicy, refusal_answer
 from rfq_copilot.core.prompts import PromptRegistry
@@ -96,6 +97,7 @@ class GraphDeps:
     prompts: PromptRegistry
     refusal_policies: dict[str, RefusalPolicy]
     store: SessionStore
+    faq_matcher: FaqMatcher | None = None
     catalog: ProductCatalogPort | None = None
     suppliers: SupplierDirectoryPort | None = None
     rag: RAGPipeline | None = None
@@ -354,6 +356,15 @@ def _understand_node(deps: GraphDeps) -> Any:
     async def node(state: AgentState) -> dict[str, Any]:
         events: list[tuple[str, dict[str, Any]]] = []
         deps.store.append_message(state["session_id"], "user", state.get("message", ""))
+        # 第一层：FAQ 关键词匹配（0 token，覆盖高频问题）
+        faq_answer = deps.faq_matcher.match(state.get("message", "")) if deps.faq_matcher else None
+        if faq_answer:
+            return {
+                "understanding": {"intent": "faq_match", "route": "faq_answer", "confidence": 1.0},
+                "route": "faq_answer",
+                "answer": faq_answer,
+                "events": [],
+            }
         u = _understanding_from_tools(state, deps)
         if u is None:
             history = deps.store.messages(state["session_id"])[-6:]
@@ -452,6 +463,7 @@ def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
             "selection_flow": "respond",
             "knowledge_flow": "respond",
             "clarify": "respond",
+            "faq_answer": "respond",
         },
     )
     for name in ("refuse", "handoff", "respond", "inquiry"):

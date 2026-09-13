@@ -37,6 +37,7 @@ def get_runtime() -> Runtime:
 def _check_internal_token(request: Request) -> dict[str, str] | None:
     """X-Internal-Token 校验；配置缺失即拒绝（防裸奔）。"""
     import os
+
     expected = os.environ.get("INTERNAL_API_TOKEN", "")
     provided = request.headers.get("X-Internal-Token", "")
     if not expected or not provided or expected != provided:

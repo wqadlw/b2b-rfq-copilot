@@ -13,6 +13,8 @@ from rfq_copilot.core.agent.graph import GraphDeps, build_graph
 from rfq_copilot.core.agent.llm import LLMClient, OpenAICompatLLM
 from rfq_copilot.core.manifest import Manifest, load_manifest
 from rfq_copilot.core.memory import SessionStore
+from rfq_copilot.core.policies.faq_matcher import FaqMatcher
+from rfq_copilot.core.policies.faq_matcher import build_default_faq as build_faq
 from rfq_copilot.core.policies.refusal import derive_refusal_policies
 from rfq_copilot.core.prompts import PromptRegistry
 from rfq_copilot.core.rag.chunking import chunk_document
@@ -86,6 +88,7 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
         prompts=PromptRegistry(),
         refusal_policies=derive_refusal_policies(manifest),
         store=store,
+        faq_matcher=FaqMatcher(build_faq()),
         catalog=ports.catalog if manifest.ports.product_catalog.enabled else None,
         suppliers=ports.suppliers if manifest.ports.supplier_directory.enabled else None,
         rag=rag,
