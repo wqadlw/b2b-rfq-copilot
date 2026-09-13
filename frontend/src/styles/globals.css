@@ -17,10 +17,15 @@
   --color-danger: #dc2626;
 }
 
-body {
+body,
+.rfq-root {
   background-color: var(--color-background);
   color: var(--color-ink);
   font-family: "Inter", "Noto Sans SC", system-ui, sans-serif;
+}
+
+.rfq-root {
+  min-height: 100vh;
 }
 
 code,
