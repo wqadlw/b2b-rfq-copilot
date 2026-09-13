@@ -10,25 +10,13 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { Bot, SendHorizonal, Square, User } from "lucide-react";
+import { SendHorizonal, Sparkles, Square } from "lucide-react";
 import { Button } from "../ui/button";
-import { CapabilityBadge } from "./CapabilityBadge";
 import { CitationCard } from "./CitationCard";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
 import type { ChatMessage, UiConfig } from "../../lib/types";
-
-const CAPABILITY_LABELS: Record<string, string> = {
-  product_catalog: "产品",
-  supplier_directory: "供应商",
-  knowledge_source: "知识库",
-  inquiry: "询盘",
-  lead_distribution: "线索",
-  pricing: "价格",
-  lead_time: "货期",
-  stock: "库存",
-};
 
 const NEAR_BOTTOM_PX = 80;
 
@@ -209,7 +197,7 @@ export function ChatWidget(): ReactElement {
       <header className="flex items-center justify-between border-b border-line bg-surface px-4 py-3">
         <div className="flex items-center gap-2.5">
           <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light">
-            <Bot className="h-4 w-4 text-primary" />
+            <Sparkles className="h-4 w-4 text-primary" />
             <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
           </span>
           <div>
@@ -217,12 +205,7 @@ export function ChatWidget(): ReactElement {
             <p className="text-xs text-ink-muted">在线 · 由 AI 询盘引擎驱动</p>
           </div>
         </div>
-        <div className="flex max-w-[55%] flex-wrap justify-end gap-1">
-          {config &&
-            Object.entries(config.capabilities).map(([key, enabled]) => (
-              <CapabilityBadge key={key} label={CAPABILITY_LABELS[key] ?? key} enabled={enabled} />
-            ))}
-        </div>
+
       </header>
 
       {/* Messages */}
@@ -235,7 +218,7 @@ export function ChatWidget(): ReactElement {
         {empty && (
           <div className="flex flex-col items-center gap-3 pt-10 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-light">
-              <Bot className="h-6 w-6 text-primary" />
+              <Sparkles className="h-6 w-6 text-primary" />
             </span>
             <p className="text-sm font-medium">您好，我是采购助手</p>
             <p className="max-w-xs text-xs text-ink-muted">
@@ -319,7 +302,6 @@ export function ChatWidget(): ReactElement {
             placeholder={busy ? "对方正在输入…" : "描述您的采购需求，如：找一台无油真空泵…"}
             className="w-full resize-none rounded-xl border border-line bg-surface px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           />
-          <User className="pointer-events-none absolute bottom-2 right-3 h-3.5 w-3.5 text-ink-muted" />
         </div>
         {busy ? (
           <Button

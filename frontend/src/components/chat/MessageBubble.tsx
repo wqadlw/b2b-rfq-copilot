@@ -3,7 +3,7 @@
  *  助手消息完成后带操作行（复制/👍/👎，P0 打磨）。 */
 
 import { useState, type ReactElement } from "react";
-import { Bot, Check, Copy, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Check, Copy, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { cn } from "../../lib/utils";
 import type { ChatMessage } from "../../lib/types";
@@ -48,7 +48,7 @@ export function MessageBubble({
       <div className={cn("flex max-w-[88%] items-end gap-2", isUser && "flex-row-reverse")}>
         {!isUser && (
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary-light">
-            <Bot className="h-3.5 w-3.5 text-primary" />
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
           </span>
         )}
         <div
