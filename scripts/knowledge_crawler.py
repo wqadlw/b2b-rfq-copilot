@@ -58,6 +58,7 @@ def _save_fingerprints(fp: dict[str, str]) -> None:
 
 def _html_to_text(html: str) -> str:
     import re
+
     text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
@@ -66,6 +67,7 @@ def _html_to_text(html: str) -> str:
 
 def _extract_title(html: str) -> str | None:
     import re
+
     match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE)
     return match.group(1).strip() if match else None
 
