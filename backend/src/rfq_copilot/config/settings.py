@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     rerank_api_key: str = ""
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
 
+    internal_api_token: str = ""
     database_url: str = "postgresql://rfq:rfq@localhost:5432/rfq"
 
     langfuse_enabled: bool = False

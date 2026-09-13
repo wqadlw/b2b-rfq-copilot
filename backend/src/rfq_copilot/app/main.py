@@ -1,11 +1,12 @@
 """FastAPI composition root: sessions / chat stream (SSE) / ui-config / health / feedback."""
 
+import hmac
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
@@ -13,6 +14,7 @@ from langgraph.types import Command
 from rfq_copilot.app.limiter import SlidingWindowLimiter
 from rfq_copilot.app.runtime import Runtime, build_runtime, seed_demo, ui_config
 from rfq_copilot.app.sse_mapper import map_graph_stream
+from rfq_copilot.config.settings import get_settings
 from rfq_copilot.schemas.chat import (
     ChatRequest,
     FeedbackRequest,
@@ -34,15 +36,19 @@ def get_runtime() -> Runtime:
     return _RUNTIME
 
 
-def _check_internal_token(request: Request) -> dict[str, str] | None:
-    """X-Internal-Token 校验；配置缺失即拒绝（防裸奔）。"""
-    import os
+def _check_internal_token(request: Request) -> None:
+    """X-Internal-Token 校验；配置缺失即拒绝（防裸奔），不匹配直接 401。
 
-    expected = os.environ.get("INTERNAL_API_TOKEN", "")
+    Token 只从 Settings（.env / 环境变量）读取——os.environ 看不到 .env 文件。
+    hmac.compare_digest 常量时间比较，防时序侧信道。
+    """
+    expected = get_settings().internal_api_token
     provided = request.headers.get("X-Internal-Token", "")
-    if not expected or not provided or expected != provided:
-        return {"code": "UPSTREAM_AUTH", "message": "invalid internal token"}
-    return None
+    if not expected or not provided or not hmac.compare_digest(expected.encode("utf-8"), provided.encode("utf-8")):
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "UPSTREAM_AUTH", "message": "invalid internal token"},
+        )
 
 
 def create_app() -> FastAPI:
@@ -121,19 +127,20 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/knowledge")
     async def add_knowledge(request: Request) -> dict[str, Any]:
         """运营自助添加知识文档（运行时生效，无需重启）。需 X-Internal-Token。"""
-        token_err = _check_internal_token(request)
-        if token_err:
-            return token_err
+        _check_internal_token(request)
         rt = get_runtime()
         if rt.deps.rag is None:
-            return {"code": "PORT_DISABLED", "message": "知识库未启用"}
+            raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "知识库未启用"})
         body = await request.json()
         doc_id = body.get("doc_id", "")
         title = body.get("title", "")
         content = body.get("content", "")
         trust = body.get("trust_level", "platform")
         if not doc_id or not title or not content:
-            return {"code": "MISSING_FIELDS", "message": "doc_id/title/content 必填"}
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "MISSING_FIELDS", "message": "doc_id/title/content 必填"},
+            )
         from rfq_copilot.core.rag.chunking import chunk_document
         from rfq_copilot.ports.knowledge_source import KnowledgeDocument
 
@@ -150,12 +157,10 @@ def create_app() -> FastAPI:
 
     @app.delete("/api/v1/knowledge/{doc_id}")
     async def delete_knowledge(doc_id: str, request: Request) -> dict[str, Any]:
-        token_err = _check_internal_token(request)
-        if token_err:
-            return token_err
+        _check_internal_token(request)
         rt = get_runtime()
         if rt.deps.rag is None:
-            return {"code": "PORT_DISABLED", "message": "知识库未启用"}
+            raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "知识库未启用"})
         removed = rt.deps.rag.remove_doc(doc_id)
         return {"doc_id": doc_id, "chunks_removed": removed}
 

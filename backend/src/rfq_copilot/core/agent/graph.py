@@ -405,9 +405,7 @@ def _understand_node(deps: GraphDeps) -> Any:
         u = _understanding_from_tools(state, deps)
         if u is None:
             history = deps.store.messages(state["session_id"])[-6:]
-            history_text = "\n".join(
-                f"{m.get('role', '')}: {str(m.get('content', ''))[:80]}" for m in history
-            )
+            history_text = "\n".join(f"{m.get('role', '')}: {str(m.get('content', ''))[:80]}" for m in history)
             system = deps.prompts.render(
                 "base_constitution",
                 display_name=deps.manifest.display_name,
