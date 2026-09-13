@@ -32,3 +32,27 @@ code,
 .mono {
   font-family: "JetBrains Mono", ui-monospace, monospace;
 }
+
+/* 消息/确认卡入场动画（T-011 打磨） */
+@keyframes rfq-fade-slide {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rfq-fade-in {
+  animation: rfq-fade-slide 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rfq-fade-in,
+  .animate-bounce,
+  .animate-pulse {
+    animation: none !important;
+  }
+}
