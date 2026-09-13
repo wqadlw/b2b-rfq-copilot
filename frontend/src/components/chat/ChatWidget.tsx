@@ -1,12 +1,14 @@
-/** Minimal chat widget (M0): ui-config header + SSE consumption + confirm placeholder. */
+/** ChatWidget — 大厂级重写：真实形态参考 vercel/ai-chatbot ai-elements 族。
+ *  头部状态点 + 能力徽章；空态欢迎+引导 chips；消息气泡族；确认卡；自适应输入区。 */
 
-import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
-import { Bot, SendHorizonal } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
+import { Bot, SendHorizonal, User } from "lucide-react";
 import { Button } from "../ui/button";
 import { CapabilityBadge } from "./CapabilityBadge";
+import { MessageBubble } from "./MessageBubble";
+import { SuggestionChips } from "./SuggestionChips";
 import { createSession, fetchUiConfig, streamChat } from "../../lib/api";
 import type { ChatMessage, UiConfig } from "../../lib/types";
-import { cn } from "../../lib/utils";
 
 const CAPABILITY_LABELS: Record<string, string> = {
   product_catalog: "产品",
@@ -27,21 +29,20 @@ export function ChatWidget(): ReactElement {
   const [busy, setBusy] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     void (async () => {
       const [cfg, session] = await Promise.all([fetchUiConfig(), createSession(null)]);
       setConfig(cfg);
       setSessionId(session);
-      if (cfg.chat.welcome_message) {
-        setMessages([{ role: "assistant", content: cfg.chat.welcome_message }]);
-      }
+      setMessages([{ role: "assistant", content: cfg.chat.welcome_message ?? "您好，我是询盘助手。" }]);
     })();
   }, []);
 
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages]);
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, pendingConfirm]);
 
   const updateLast = (patch: Partial<ChatMessage>): void => {
     setMessages((prev) => {
@@ -62,6 +63,7 @@ export function ChatWidget(): ReactElement {
   const send = async (message: string, action?: "confirm_inquiry" | "cancel_inquiry"): Promise<void> => {
     if (!sessionId || busy || (!message && !action)) return;
     setBusy(true);
+    setPendingConfirm(null);
     if (message) setMessages((prev) => [...prev, { role: "user", content: message }]);
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
     try {
@@ -99,14 +101,32 @@ export function ChatWidget(): ReactElement {
     void send(message);
   };
 
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      const message = input.trim();
+      setInput("");
+      void send(message);
+    }
+  };
+
+  const empty = messages.length <= 1 && !pendingConfirm;
+
   return (
-    <div className="mx-auto flex h-screen max-w-2xl flex-col bg-surface">
-      <header className="flex items-center justify-between border-b border-line px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Bot className="h-5 w-5 text-primary" />
-          <h1 className="text-base font-semibold">{config?.display_name ?? "询盘助手"}</h1>
+    <div className="mx-auto flex h-screen max-w-2xl flex-col bg-background">
+      {/* Header：状态点 + 标题 + 能力徽章 */}
+      <header className="flex items-center justify-between border-b border-line bg-surface px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light">
+            <Bot className="h-4 w-4 text-primary" />
+            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
+          </span>
+          <div>
+            <h1 className="text-base font-semibold leading-tight">{config?.display_name ?? "询盘助手"}</h1>
+            <p className="text-xs text-ink-muted">在线 · 由 AI 询盘引擎驱动</p>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex max-w-[55%] flex-wrap justify-end gap-1">
           {config &&
             Object.entries(config.capabilities).map(([key, enabled]) => (
               <CapabilityBadge key={key} label={CAPABILITY_LABELS[key] ?? key} enabled={enabled} />
@@ -114,28 +134,31 @@ export function ChatWidget(): ReactElement {
         </div>
       </header>
 
-      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={cn(
-              "max-w-[80%] rounded-xl border px-3 py-2 text-sm leading-relaxed",
-              message.role === "user"
-                ? "ml-auto border-primary bg-primary text-white"
-                : "border-line bg-surface",
-            )}
-          >
-            {message.statusLine && <p className="mb-1 text-xs text-ink-muted">{message.statusLine}</p>}
-            {message.content || (message.statusLine ? "" : "…")}
-            {message.inquiryCreated && (
-              <p className="mt-1 text-xs text-success">询盘已创建 ✓（后台可查）</p>
-            )}
+      {/* Messages */}
+      <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+        {empty && (
+          <div className="flex flex-col items-center gap-3 pt-10 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-light">
+              <Bot className="h-6 w-6 text-primary" />
+            </span>
+            <p className="text-sm font-medium">您好，我是采购助手</p>
+            <p className="max-w-xs text-xs text-ink-muted">
+              我可以帮您查产品、对参数、做选型；需要报价可直接为您创建询盘。
+            </p>
+            <SuggestionChips
+              questions={config?.chat.suggested_questions ?? []}
+              onPick={(q) => void send(q)}
+            />
           </div>
+        )}
+        {messages.map((message, index) => (
+          <MessageBubble key={index} message={message} streaming={busy && index === messages.length - 1} />
         ))}
         {pendingConfirm && (
-          <div className="rounded-xl border border-warning/60 bg-warning/10 p-3 text-sm">
-            <p className="font-medium">请确认以上询盘信息</p>
-            <div className="mt-2 flex gap-2">
+          <div className="ml-auto w-[88%] rounded-xl border border-warning/60 bg-warning/10 p-3">
+            <p className="text-sm font-semibold text-ink">确认提交询盘</p>
+            <p className="mt-1 text-xs text-ink-secondary">提交后将进入供应商报价流程，请核对以上信息。</p>
+            <div className="mt-2.5 flex gap-2">
               <Button size="sm" onClick={() => void send("", "confirm_inquiry")}>
                 确认提交
               </Button>
@@ -147,17 +170,31 @@ export function ChatWidget(): ReactElement {
         )}
       </div>
 
-      <form onSubmit={onSubmit} className="flex items-center gap-2 border-t border-line p-3">
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="输入您的采购需求…"
-          className="h-9 flex-1 rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-        />
-        <Button type="submit" disabled={busy || !input.trim()} aria-label="发送">
+      {/* Input */}
+      <form onSubmit={onSubmit} className="flex items-end gap-2 border-t border-line bg-surface p-3">
+        <div className="relative flex-1">
+          <textarea
+            ref={inputRef}
+            value={input}
+            rows={1}
+            onChange={(event) => {
+              setInput(event.target.value);
+              event.target.style.height = "auto";
+              event.target.style.height = `${Math.min(event.target.scrollHeight, 120)}px`;
+            }}
+            onKeyDown={onKeyDown}
+            placeholder="描述您的采购需求，如：找一台无油真空泵…"
+            className="w-full resize-none rounded-xl border border-line bg-surface px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <User className="pointer-events-none absolute bottom-2 right-3 h-3.5 w-3.5 text-ink-muted" />
+        </div>
+        <Button type="submit" disabled={busy || !input.trim()} aria-label="发送" className="h-9 w-9 !px-0">
           <SendHorizonal className="h-4 w-4" />
         </Button>
       </form>
+      <p className="pb-2 text-center text-[11px] text-ink-muted">
+        内容由 AI 生成 · 价格与货期以供应商确认为准
+      </p>
     </div>
   );
 }
