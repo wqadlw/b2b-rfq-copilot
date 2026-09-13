@@ -141,6 +141,8 @@ def _run_live(cases: list[dict]) -> tuple[Counter, list[str]]:
         sys.exit(3)
     retrieval_mode = "semantic(bge-m3)" if settings.embedding_provider == "openai_compatible" else "hashing(fallback)"
     rt = build_runtime()
+    from rfq_copilot.core.eval.faithfulness import judge as faithfulness_judge
+
     print(f"live: llm={settings.llm_model} retrieval={retrieval_mode}")
 
     async def drive() -> tuple[Counter, list[str]]:
@@ -183,6 +185,10 @@ def _run_live(cases: list[dict]) -> tuple[Counter, list[str]]:
                 if not _check(assertion, answer, events, final):
                     ok = False
                     failures.append(f"{case['id']}: {assertion['type']}")
+            if case["family"] == "A" and answer and rt.deps.rag is not None:
+                ctx, _ = await rt.deps.rag.context_for(state["message"], top_k=5)
+                verdict = await faithfulness_judge(rt.deps.llm, state["message"], answer, ctx)
+                tally["A_faithful"] += int(verdict["faithful"])
             tally[case["family"]] += 1
             tally[f"{case['family']}_pass"] += int(ok)
         return tally, failures
