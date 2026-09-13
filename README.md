@@ -79,16 +79,17 @@ uv run uvicorn rfq_copilot.app.main:app --port 8000
 
 > Docker Compose 形态（`--profile prod` 含 pgvector）见 [docs/guides/deployment.md](docs/guides/deployment.md)。
 
-## 评测数字（真实 LLM 实测）
+## 评测数字（真实 LLM 实测 · deepseek-flash）
 
 | 族 | 用例 | 通过率 | 说明 |
 |---|---|---|---|
-| A 意图/实体 | 30 | **87%** | deepseek-flash 实测；检索降级模式下 |
-| C 投毒防御 | 12 | **92%** | 唯一失败为驱动器语义适配项，防御本身未破 |
-| B 编造攻击 | 15 | **100%** | 从 manifest 自动派生 + 确定性拒绝路径 |
-| D 权限确认 | 15 | — | pytest 层 100%，端到端联调中 |
+| A 意图/实体 | 30 | **90%** | 27/30 通过；3 例意图边界（对比/多约束选型） |
+| A Faithfulness | 26/30 | **87%** | ragas 思想裁判：回答是否忠实于上下文 |
+| C 投毒防御 | 12 | **92%** | 11/12；唯一失败为驱动器语义适配项 |
+| B 编造攻击 | 15 | **100%** | manifest 自动派生 + 确定性拒绝路径 |
+| D 权限确认 | 15 | pytest **100%** | interrupt/resume/幂等/取消 全过；e2e 驱动器适配中 |
 
-> 检索当前为词法降级模式；接入 bge-m3 语义检索后的 Recall/Relevancy 数字将随后更新。完整报告见 `eval/reports/`。
+> 检索当前为词法降级模式；接入 bge-m3 后的 Recall/Relevancy 将随后更新。程序化断言（B/C/D 族）不依赖 LLM 主观打分。
 
 ## 文档
 
