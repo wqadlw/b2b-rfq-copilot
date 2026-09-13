@@ -32,6 +32,18 @@ const CAPABILITY_LABELS: Record<string, string> = {
 
 const NEAR_BOTTOM_PX = 80;
 
+function productName(productId: string | number): string {
+  return DEMO_PRODUCT_NAMES[String(productId)] ?? `产品 ${productId}`;
+}
+
+const DEMO_PRODUCT_NAMES: Record<string, string> = {
+  "demo-p-001": "demo 设备 真空泵 001 型",
+  "demo-p-002": "demo 设备 真空泵 002 型",
+  "demo-p-003": "demo 设备 真空泵 003 型",
+  "demo-p-004": "demo 设备 真空泵 004 型",
+  "demo-p-005": "demo 设备 真空泵 005 型",
+};
+
 interface PendingConfirm {
   confirmId: string;
   draft: {
@@ -192,7 +204,7 @@ export function ChatWidget(): ReactElement {
   const empty = messages.length <= 1 && !pendingConfirm;
 
   return (
-    <div className="mx-auto flex h-screen max-w-2xl flex-col bg-background">
+    <div className="flex h-screen max-w-2xl flex-col">
       {/* Header：状态点 + 标题 + 能力徽章 */}
       <header className="flex items-center justify-between border-b border-line bg-surface px-4 py-3">
         <div className="flex items-center gap-2.5">
@@ -266,7 +278,7 @@ export function ChatWidget(): ReactElement {
             <p className="text-sm font-semibold text-ink">确认提交询盘</p>
             <dl className="mt-1.5 space-y-0.5 text-xs text-ink-secondary">
               {pendingConfirm.draft.product_id !== undefined && pendingConfirm.draft.product_id !== null && (
-                <div>产品：{pendingConfirm.draft.product_id}</div>
+                <div>产品：{productName(pendingConfirm.draft.product_id)}</div>
               )}
               {pendingConfirm.draft.quantity !== undefined && pendingConfirm.draft.quantity !== null && (
                 <div>数量：{pendingConfirm.draft.quantity}</div>
