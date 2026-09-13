@@ -50,6 +50,7 @@ export function ChatWidget(): ReactElement {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [restored, setRestored] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
@@ -58,12 +59,35 @@ export function ChatWidget(): ReactElement {
 
   useEffect(() => {
     void (async () => {
-      const [cfg, session] = await Promise.all([fetchUiConfig(), createSession(null)]);
+      const cfg = await fetchUiConfig();
       setConfig(cfg);
+      // localStorage 恢复（刷新不丢消息）
+      const saved = localStorage.getItem("rfq-messages");
+      const savedSid = localStorage.getItem("rfq-session-id");
+      if (saved && savedSid) {
+        try {
+          const parsed = JSON.parse(saved) as ChatMessage[];
+          if (parsed.length > 0) {
+            setMessages(parsed);
+            setSessionId(savedSid);
+            setRestored(true);
+            return;
+          }
+        } catch { /* 解析失败走新建 */ }
+      }
+      const session = await createSession(null);
       setSessionId(session);
       setMessages([{ role: "assistant", content: cfg.chat.welcome_message ?? "您好，我是询盘助手。" }]);
     })();
   }, []);
+
+  // 消息变更时持久化
+  useEffect(() => {
+    if (messages.length > 0 && sessionId) {
+      localStorage.setItem("rfq-messages", JSON.stringify(messages));
+      localStorage.setItem("rfq-session-id", sessionId);
+    }
+  }, [messages, sessionId]);
 
   // 智能滚动：仅当用户停留在底部附近时跟随；用户上翻阅读时不打断
   useEffect(() => {
