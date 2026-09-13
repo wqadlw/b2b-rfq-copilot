@@ -3,6 +3,7 @@
 
 import type { ReactElement } from "react";
 import { Bot } from "lucide-react";
+import { Streamdown } from "streamdown";
 import { cn } from "../../lib/utils";
 import type { ChatMessage } from "../../lib/types";
 
@@ -43,7 +44,13 @@ export function MessageBubble({
             message.inquiryCreated && "border-success/50",
           )}
         >
-          {message.content || (streaming ? <Caret /> : "")}
+          {isUser
+            ? message.content
+            : message.content
+              ? <Streamdown>{message.content}</Streamdown>
+              : streaming
+                ? <Caret />
+                : ""}
           {message.inquiryCreated && <p className="mt-1 text-xs text-success">询盘已创建 ✓ 后台可查</p>}
         </div>
       </div>
