@@ -1,60 +1,118 @@
+<div align="center">
+
 # b2b-rfq-copilot
 
-> **通用垂直行业 B2B 智能询盘引擎（RFQ Copilot）** — 一个可接入不同垂直行业 B2B 平台的 AI 询盘 Agent 引擎，通过端口/适配器与能力清单机制对接站点的产品、供应商、知识库、询盘与线索分发系统。真空行业 B2B 平台是第一个落地实例。
+**通用垂直行业 B2B 智能询盘引擎 · RFQ Copilot**
 
-**状态**：🚧 活跃开发中（M0 骨架阶段）· 文档先行，代码随后
+*站在 LangGraph、pgvector、RAGFlow、ragas 等巨人的肩膀上，用诚实的借鉴与严谨的工程实践，锻造一个在安全设计上完全自研的垂直行业 B2B 智能询盘引擎。*
 
-## 它解决什么
+[![CI](https://github.com/wqadlw/b2b-rfq-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/wqadlw/b2b-rfq-copilot/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 
-B2B 平台的访客咨询散落在浏览行为里，转化依赖人工客服。本引擎把咨询变成**结构化询盘**：AI 接待 → 理解需求 → 检索产品与知识 → 澄清缺失字段 → 用户确认 → 询盘落库 → 高价值线索分发。
+**状态**：🚧 活跃开发中（M4 闭环完成 · M5 发布阶段） · [评测报告](eval/reports/) · [架构文档](docs/ARCHITECTURE.md)
+
+</div>
+
+---
+
+## 它解决什么问题
+
+B2B 平台的访客咨询散落在浏览行为里，转化依赖人工客服。本引擎把咨询变成**结构化询盘**：
+
+```
+访客对话 → 意图理解 → 检索产品与知识 → 澄清缺失字段 → 用户确认 → 询盘落库 → 高价值线索分发
+```
+
+它不是一个聊天机器人，而是一条**可审计、可评测、可防御、能变现**的询盘生产线。真空工业 B2B 平台（找真空）是第一个落地实例。
 
 ## 核心特性
 
-- **端口/适配器架构**：5 个端口（产品/供应商/知识/询盘/线索）抽象 Core 与站点；新行业只需实现一个 adapter 包
-- **Capability Manifest**：站点声明自己有什么能力（YAML）；没有的能力（如公开价格）→ 工具物理不注册 + 拒绝话术自动注入 + **负向评测用例自动生成**
-- **拒绝编造**：AI 永不编造价格区间、货期、库存——无数据源一律确定性话术
-- **检索投毒防御**：商户提交内容按不可信处理（信任三级 + 指令隔离 + 写操作用户确认门 + 输出过滤）
-- **生产工程**：SSE 流式 · LangGraph 检查点 · 分层模型成本控制 · Langfuse 追踪 · 程序化断言评测（B/C/D 族不用 LLM 打分）
+### 🔌 端口/适配器 + 能力清单（架构核心）
+
+- **5 个端口**抽象引擎与站点：产品目录 / 供应商 / 知识库 / 询盘 / 线索分发——新行业接入只需实现一个 adapter 包
+- **Capability Manifest**：站点用 YAML 声明自己有什么能力。没有的能力（如公开报价）→ 工具**物理不注册**进 LLM 工具列表 + 拒绝话术自动注入 + **负向评测用例自动生成**
+- UI 配置由后端从 manifest 渲染下发——manifest 是工具装配、拒绝策略、评测派生、前端展示的唯一事实源
+
+### 🛡️ 安全设计（完全自研，本项目护城河）
+
+| 机制 | 说明 |
+|---|---|
+| **检索投毒防御** | 商户提交内容按不可信处理：platform/merchant/ugc 三级信任 + XML 物理隔离 + HTML 转义防伪造 + 输出过滤 |
+| **拒绝编造** | 无数据源能力（价格区间/货期/库存）确定性模板作答——AI 永不编造；页面标价仅可逐字引用 |
+| **写操作确认门** | 建询盘/入线索必须用户对话内显式确认，基于 LangGraph `interrupt()/Command(resume)` 实现 |
+| **线索晋升防火墙** | AI 只产候选（未上架），上架与扣费永远是人工作业 |
+
+> 检索投毒防御是 2024 年才兴起的新兴领域，工程实践极少；拒绝编造需要与 B2B 业务场景深度绑定。这三套安全设计在 GitHub 上**没有可直接借鉴的同类项目**——详见[借鉴图谱](docs/REFERENCES.md)。
+
+### 🏭 生产工程
+
+- **SSE 流式** 十事件契约（状态/工具调用/引用增量/确认卡/交接）+ 反代防缓冲
+- **评测体系**：47 条手写种子 + B 族自动派生，程序化断言（非 LLM 主观打分），CI 内全量回归
+- **可观测**：结构化日志全链路（理解→检索→重排→生成→确认），Langfuse 就绪
+- **成本工程**：分层模型（轻量理解+强模型回答）、会话 token 预算、双层限流
 
 ## 架构一瞥
 
 ```text
-Core（通用引擎）──依赖──▶ 5 Ports + Manifest
+Core（通用引擎）──依赖──▶ 5 Ports + Capability Manifest
    ▲
-Adapters（demo 内置模拟数据 · vacuum_b2b 真实行业示例）
+Adapters（demo 内置模拟数据 · vacuum_b2b_sample 真实行业示例）
    ▲
 Your Site（/internal-api/* · 询盘落库 · 线索分发）
 ```
 
-详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+前端浮窗为**可嵌入设计**：宿主站点一行 `<script>` 标签接入，零 React 依赖、零样式污染。
 
-## Quickstart（M0 后可用）
+## 快速开始（目标 10 分钟）
 
 ```bash
-git clone https://github.com/<you>/b2b-rfq-copilot.git
+git clone https://github.com/wqadlw/b2b-rfq-copilot.git
 cd b2b-rfq-copilot
-cp .env.example .env         # 填 1 个 LLM API Key
-docker compose up            # 打开 http://localhost:8000 即可对话
+cp .env.example .env              # 填 1 个 OpenAI 兼容 LLM Key（DeepSeek/Qwen/GLM 均可）
+uv sync --extra dev               # 或 pip install -e ".[dev]"
+uv run uvicorn rfq_copilot.app.main:app --port 8000
+# 另开终端：cd frontend && pnpm install && pnpm dev
+# 打开 http://localhost:5173 即可对话
 ```
 
-> 目标验收线：clone → 1 个 Key → 10 分钟内可聊天/搜产品/创建模拟询盘/看到引用来源。
+> Docker Compose 形态（`--profile prod` 含 pgvector）见 [docs/guides/deployment.md](docs/guides/deployment.md)。
+
+## 评测数字（真实 LLM 实测）
+
+| 族 | 用例 | 通过率 | 说明 |
+|---|---|---|---|
+| A 意图/实体 | 30 | **87%** | deepseek-flash 实测；检索降级模式下 |
+| C 投毒防御 | 12 | **92%** | 唯一失败为驱动器语义适配项，防御本身未破 |
+| B 编造攻击 | 15 | **100%** | 从 manifest 自动派生 + 确定性拒绝路径 |
+| D 权限确认 | 15 | — | pytest 层 100%，端到端联调中 |
+
+> 检索当前为词法降级模式；接入 bge-m3 语义检索后的 Recall/Relevancy 数字将随后更新。完整报告见 `eval/reports/`。
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构总览 |
-| [docs/specs/01-port-spec.md](docs/specs/01-port-spec.md) | 端口/manifest/装配/评测派生（唯一权威） |
-| [docs/FRONTEND_STYLE_GUIDE.md](docs/FRONTEND_STYLE_GUIDE.md) | 视觉规范与组件库 |
-| [docs/specs/06-eval-spec.md](docs/specs/06-eval-spec.md) | 评测体系（含自动派生红队用例） |
-| [docs/policies/repo-policy.md](docs/policies/repo-policy.md) | 仓库政策 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 三层架构总览 |
+| [docs/specs/01-port-spec.md](docs/specs/01-port-spec.md) | 端口/manifest/装配/派生（唯一权威） |
+| [docs/REFERENCES.md](docs/REFERENCES.md) | **借鉴图谱**：借了什么/学到什么程度/落在哪个文件/合规边界 |
+| [docs/FRONTEND_STYLE_GUIDE.md](docs/FRONTEND_STYLE_GUIDE.md) | 视觉规范（Industrial AI Clean） |
+| [docs/specs/06-eval-spec.md](docs/specs/06-eval-spec.md) | 评测体系与自动派生规则 |
+| [docs/adr/](docs/adr/) | 关键技术决策（技术栈冻结/pgvector/前端栈） |
+
+## 借鉴与自研
+
+架构思想站在巨人肩上——**LangGraph** 的状态机与 interrupt/resume、**RAGFlow** 的分块与引用溯源、**ragas** 的评测指标思想、**pgvector + BGE** 的存储与检索、**Vercel AI Chatbot / assistant-ui** 的前端形态。
+
+核心差异化**完全自研**：检索投毒防御体系、能力清单驱动的拒绝编造、线索晋升防火墙。每个借鉴的"借了什么、学到什么程度、落在哪个文件、合规边界在哪"全部可追溯——完整图谱见 [docs/REFERENCES.md](docs/REFERENCES.md)。
 
 ## Adapters
 
 | Adapter | 状态 | 说明 |
 |---|---|---|
-| `demo` | 🚧 M0 | 内置模拟数据，clone 即跑 |
-| `vacuum_b2b` | 📋 已出规格 | 真空工业 B2B 平台（首个真实落地实例，站点侧私有集成） |
+| `demo` | ✅ | 内置模拟数据（含投毒样本），clone 即跑 |
+| `vacuum_b2b_sample` | ✅ | 真空工业 B2B 平台适配示例（脱敏），站点侧私有集成已落地 |
 
 ## License
 
