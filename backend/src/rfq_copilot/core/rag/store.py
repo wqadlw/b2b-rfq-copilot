@@ -20,6 +20,8 @@ class VectorStore(Protocol):
         self, query_vector: list[float], top_k: int = 5, trust_levels: set[str] | None = None
     ) -> list[ScoredChunk]: ...
 
+    def remove_by_doc_id(self, doc_id: str) -> int: ...
+
     def count(self) -> int: ...
 
 
@@ -45,6 +47,12 @@ class InMemoryVectorStore:
         ]
         scored.sort(key=lambda s: s.score, reverse=True)
         return scored[:top_k]
+
+    def remove_by_doc_id(self, doc_id: str) -> int:
+        """Remove all chunks belonging to a document; returns count removed."""
+        before = len(self.rows)
+        self.rows = [(c, v) for c, v in self.rows if c.doc_id != doc_id]
+        return before - len(self.rows)
 
     def count(self) -> int:
         return len(self.rows)

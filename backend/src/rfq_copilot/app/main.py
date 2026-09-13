@@ -107,6 +107,41 @@ def create_app() -> FastAPI:
     async def messages(session_id: str) -> dict[str, Any]:
         return {"messages": get_runtime().store.messages(session_id), "has_more": False}
 
+    @app.post("/api/v1/knowledge")
+    async def add_knowledge(request: Request) -> dict[str, Any]:
+        """运营自助添加知识文档（运行时生效，无需重启）。"""
+        rt = get_runtime()
+        if rt.deps.rag is None:
+            return {"code": "PORT_DISABLED", "message": "知识库未启用"}
+        body = await request.json()
+        doc_id = body.get("doc_id", "")
+        title = body.get("title", "")
+        content = body.get("content", "")
+        trust = body.get("trust_level", "platform")
+        if not doc_id or not title or not content:
+            return {"code": "MISSING_FIELDS", "message": "doc_id/title/content 必填"}
+        from rfq_copilot.core.rag.chunking import chunk_document
+        from rfq_copilot.ports.knowledge_source import KnowledgeDocument
+
+        doc = KnowledgeDocument(
+            doc_id=doc_id,
+            title=title,
+            doc_type=body.get("doc_type", "platform_faq"),
+            trust_level=trust,
+            content=content,
+        )
+        chunks = chunk_document(doc)
+        await rt.deps.rag.ingest(chunks)
+        return {"doc_id": doc_id, "chunks": len(chunks), "status": "ingested"}
+
+    @app.delete("/api/v1/knowledge/{doc_id}")
+    async def delete_knowledge(doc_id: str) -> dict[str, Any]:
+        rt = get_runtime()
+        if rt.deps.rag is None:
+            return {"code": "PORT_DISABLED", "message": "知识库未启用"}
+        removed = rt.deps.rag.remove_doc(doc_id)
+        return {"doc_id": doc_id, "chunks_removed": removed}
+
     @app.post("/api/v1/feedback")
     async def feedback(body: FeedbackRequest) -> dict[str, str]:
         return {"status": "recorded"}

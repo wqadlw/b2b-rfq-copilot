@@ -44,6 +44,10 @@ class RAGPipeline:
         logger.info("rag.rerank", final=[c.doc_id for c in final])
         return final
 
+    def remove_doc(self, doc_id: str) -> int:
+        """Remove all chunks for a doc_id (delegates to store)."""
+        return self._store.remove_by_doc_id(doc_id)
+
     async def context_for(self, query: str, top_k: int = FINAL_TOP_K) -> tuple[str, list[Chunk]]:
         """Search + render trust-isolated context blocks (platform/merchant separated)."""
         chunks = await self.search(query, top_k)
