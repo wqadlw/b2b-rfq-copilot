@@ -24,6 +24,7 @@ from rfq_copilot.core.policies.refusal import RefusalPolicy, refusal_answer
 from rfq_copilot.core.prompts import PromptRegistry
 from rfq_copilot.core.rag.citation import validate_citations
 from rfq_copilot.core.rag.pipeline import RAGPipeline
+from rfq_copilot.core.rag.spec_matcher import extract_spec_criteria, match_products
 from rfq_copilot.ports.errors import ConfigError, CopilotError
 from rfq_copilot.ports.inquiry_sink import AiExtract, Contact, InquiryDraft, InquirySinkPort
 from rfq_copilot.ports.lead_distribution import LeadDistributionPort
@@ -210,7 +211,42 @@ def _respond_node(deps: GraphDeps) -> Any:
         whitelist: set[str] = set()
         tools = deps.tool_registry()
 
-        if route in {"product_flow", "selection_flow"} and "search_products" in tools:
+        if route == "spec_match_flow" and deps.rag is not None:
+            # 规格匹配：从实体中提取规格条件，按参数过滤产品
+            tool_calls.append("spec_match")
+            events.append(("tool_call", {"tool": "spec_match", "status": "running"}))
+            criteria = extract_spec_criteria(state.get("understanding", {}).get("entities", {}))
+            if criteria.is_empty:
+                answer = "请告诉我您需要的规格参数，例如抽速、极限真空度等，我来帮您匹配。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            # 搜索所有产品后按规格过滤
+            from rfq_copilot.ports.product_catalog import ProductSearchQuery as _PSQ
+
+            search_fn = tools.get("search_products") or (deps.catalog.search if deps.catalog else None)
+            if search_fn is None:
+                answer = "当前环境未接入产品库，无法进行规格匹配。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            result = await _call_tool(search_fn, _PSQ(keyword="", page_size=20))
+            events.append(("tool_call", {"tool": "spec_match", "status": "done"}))
+            matched = match_products(result.items if hasattr(result, "items") else [], criteria)
+            if not matched:
+                no_match_head = "暂未找到完全匹配您规格的产品。以下是接近的产品："
+                tail = "您可以提交询盘，供应商会推荐接近的型号。"
+                close = "\n".join(f"- {p.name}（{p.supplier_name}）" for p in result.items[:3])
+                answer = no_match_head + "\n" + close + "\n" + tail
+            else:
+                lines = ["根据您的规格需求，以下产品最匹配（按匹配度排序）："]
+                for product, _score in matched[:3]:
+                    specs_text = "；".join(f"{k}:{v}" for k, v in list(product.specs.items())[:3])
+                    price_text = (
+                        product.price_display.text if product.price_display.mode == "shown" else "请联系供应商询价"
+                    )
+                    if product.price_display.mode == "shown":
+                        whitelist.add(product.price_display.text.strip())
+                    lines.append(f"  {product.name}（{product.supplier_name}）{specs_text}｜{price_text}")
+                    events.append(("citation", {"title": product.name, "trust": "merchant"}))
+                answer = "\n".join(lines)
+        elif route in {"product_flow", "selection_flow"} and "search_products" in tools:
             events.append(("tool_call", {"tool": "search_products", "status": "running"}))
             tool_calls.append("search_products")
             result = await _call_tool(tools["search_products"], ProductSearchQuery(keyword=message[:40]))
@@ -342,7 +378,8 @@ def _inquiry_node(deps: GraphDeps) -> Any:
             return {"route": "inquiry_flow", "answer": "当前环境未接入询盘通道。", "events": events}
         result = await _call_tool(sink.create, draft)
         events.append(("inquiry_created", {"inquiry_id": result.inquiry_id, "state": result.state}))
-        answer = "询盘已创建成功，供应商会尽快与您联系。"
+        events.append(("wechat_guidance", {"message": "询盘已创建，您可以添加供应商微信获取更快响应。"}))
+        answer = "询盘已创建成功，供应商会尽快与您联系。\n您也可以添加供应商微信获取更快响应（扫描二维码）。"
         return {"route": "inquiry_flow", "answer": answer, "events": events, "confirm_done": True}
 
     return node
@@ -468,6 +505,7 @@ def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
             "knowledge_flow": "respond",
             "clarify": "respond",
             "faq_answer": "respond",
+            "spec_match_flow": "respond",
         },
     )
     for name in ("refuse", "handoff", "respond", "inquiry"):
