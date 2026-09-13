@@ -307,7 +307,7 @@ export function ChatWidget(): ReactElement {
               type="button"
               onClick={stop}
               aria-label="停止生成"
-              className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white transition-transform active:scale-90"
+              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg bg-ink text-white transition-transform active:scale-90"
             >
               <Square className="h-3 w-3" />
             </button>
@@ -316,7 +316,7 @@ export function ChatWidget(): ReactElement {
               type="submit"
               disabled={!input.trim()}
               aria-label="发送"
-              className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white transition-all hover:bg-primary-hover active:scale-90 disabled:opacity-30"
+              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg bg-primary text-white transition-all hover:bg-primary-hover active:scale-90 disabled:opacity-30"
             >
               <SendHorizonal className="h-4 w-4" />
             </button>
