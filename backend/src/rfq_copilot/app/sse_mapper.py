@@ -16,6 +16,10 @@ logger = structlog.get_logger(__name__)
 _CHUNK_SIZE = 24
 
 
+def _mask(phone: str) -> str:
+    return f"{phone[:3]}****{phone[-4:]}" if len(phone) >= 7 else phone
+
+
 def _chunk_answer(answer: str) -> list[str]:
     return [answer[i : i + _CHUNK_SIZE] for i in range(0, len(answer), _CHUNK_SIZE)]
 

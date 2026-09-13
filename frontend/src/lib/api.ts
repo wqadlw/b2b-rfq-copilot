@@ -29,16 +29,18 @@ interface StreamOptions {
   contact?: { name?: string; phone?: string } | null;
   quantity?: number | null;
   productId?: string | null;
+  signal?: AbortSignal;
   onEvent: (event: ChatEventName, data: ChatEventData) => void;
 }
 
 export async function streamChat(options: StreamOptions): Promise<void> {
-  const { onEvent, ...body } = options;
+  const { onEvent, signal, ...body } = options;
   await fetchEventSource(`${ENDPOINT}/api/v1/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     openWhenHidden: true,
+    signal,
     onmessage(msg) {
       const name = msg.event as ChatEventName;
       let data: ChatEventData = {};
@@ -49,5 +51,17 @@ export async function streamChat(options: StreamOptions): Promise<void> {
       }
       onEvent(name, data);
     },
+  });
+}
+
+export async function sendFeedback(
+  sessionId: string,
+  messageId: string,
+  feedback: "helpful" | "not_helpful",
+): Promise<void> {
+  await fetch(`${ENDPOINT}/api/v1/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, message_id: messageId, feedback }),
   });
 }

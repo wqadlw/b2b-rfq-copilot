@@ -1,15 +1,22 @@
 /** ChatWidget — 大厂级重写：真实形态参考 vercel/ai-chatbot ai-elements 族。
- *  头部状态点 + 能力徽章；空态欢迎+引导 chips；消息气泡族；确认卡；自适应输入区。
- *  细节：智能滚动（用户上翻阅读时不打断）、发送后输入框高度复位、消息入场动画、aria-live。 */
+ *  头部状态点 + 能力徽章；空态欢迎+引导 chips；消息气泡族；确认卡字段表；确认卡；自适应输入区。
+ *  P0：停止生成(AbortController) / 一键复制 / feedback 接线 / 错误重试 / 确认卡字段表。 */
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
-import { Bot, SendHorizonal, User } from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactElement,
+} from "react";
+import { Bot, SendHorizonal, Square, User } from "lucide-react";
 import { Button } from "../ui/button";
 import { CapabilityBadge } from "./CapabilityBadge";
 import { CitationCard } from "./CitationCard";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
-import { createSession, fetchUiConfig, streamChat } from "../../lib/api";
+import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
 import type { ChatMessage, UiConfig } from "../../lib/types";
 
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -25,16 +32,29 @@ const CAPABILITY_LABELS: Record<string, string> = {
 
 const NEAR_BOTTOM_PX = 80;
 
+interface PendingConfirm {
+  confirmId: string;
+  draft: {
+    product_id?: string | number | null;
+    quantity?: number | null;
+    contact_name?: string;
+    contact_phone_masked?: string;
+    missing_fields?: string[];
+  };
+}
+
 export function ChatWidget(): ReactElement {
   const [config, setConfig] = useState<UiConfig | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [pendingConfirm, setPendingConfirm] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+  const lastUserMessage = useRef<string>("");
 
   useEffect(() => {
     void (async () => {
@@ -80,17 +100,39 @@ export function ChatWidget(): ReactElement {
     });
   };
 
+  const handleCopy = (text: string): void => {
+    void navigator.clipboard.writeText(text);
+  };
+
+  const handleFeedback = (messageId: string, kind: "helpful" | "not_helpful"): void => {
+    if (sessionId === null) return;
+    setMessages((prev) =>
+      prev.map((m, i) => (i === Number(messageId) ? { ...m, feedback: kind } : m)),
+    );
+    void sendFeedback(sessionId, messageId, kind);
+  };
+
+  const stop = (): void => {
+    abortRef.current?.abort();
+  };
+
   const send = async (message: string, action?: "confirm_inquiry" | "cancel_inquiry"): Promise<void> => {
     if (!sessionId || busy || (!message && !action)) return;
     setBusy(true);
     setPendingConfirm(null);
-    if (message) setMessages((prev) => [...prev, { role: "user", content: message }]);
+    if (message) {
+      lastUserMessage.current = message;
+      setMessages((prev) => [...prev, { role: "user", content: message }]);
+    }
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       await streamChat({
         sessionId,
         message,
         action,
+        signal: controller.signal,
         contact: { name: "demo 用户", phone: "13800000000" },
         quantity: 10,
         productId: null,
@@ -110,16 +152,23 @@ export function ChatWidget(): ReactElement {
               return [...prev.slice(0, -1), { ...last, citations: list }];
             });
           } else if (name === "inquiry_confirm") {
-            setPendingConfirm(data.confirm_id ?? null);
+            setPendingConfirm({ confirmId: data.confirm_id ?? "", draft: data.draft ?? {} });
           } else if (name === "inquiry_created") {
             setPendingConfirm(null);
             updateLast({ inquiryCreated: true });
+          } else if (name === "error") {
+            updateLast({ error: true });
           }
         },
       });
     } catch {
-      updateLast({ content: "连接中断，请重试。", statusLine: undefined });
+      if (controller.signal.aborted) {
+        updateLast({ content: "已停止生成。", statusLine: undefined });
+      } else {
+        updateLast({ content: "连接中断，请重试。", statusLine: undefined, error: true });
+      }
     } finally {
+      abortRef.current = null;
       setBusy(false);
     }
   };
@@ -188,7 +237,12 @@ export function ChatWidget(): ReactElement {
         )}
         {messages.map((message, index) => (
           <div key={index} className="rfq-fade-in flex flex-col gap-1">
-            <MessageBubble message={message} streaming={busy && index === messages.length - 1} />
+            <MessageBubble
+              message={message}
+              streaming={busy && index === messages.length - 1}
+              onCopy={handleCopy}
+              onFeedback={(kind) => handleFeedback(String(index), kind)}
+            />
             {message.citations && message.citations.length > 0 && (
               <div className="ml-8 flex flex-wrap gap-1">
                 {message.citations.map((c, ci) => (
@@ -196,12 +250,35 @@ export function ChatWidget(): ReactElement {
                 ))}
               </div>
             )}
+            {message.error && lastUserMessage.current !== "" && (
+              <button
+                type="button"
+                onClick={() => void send(lastUserMessage.current)}
+                className="ml-8 self-start rounded-lg border border-line px-2 py-1 text-xs text-ink-secondary transition-colors hover:border-primary hover:text-primary"
+              >
+                重试上一条请求
+              </button>
+            )}
           </div>
         ))}
         {pendingConfirm && (
           <div className="rfq-fade-in ml-auto w-[88%] rounded-xl border border-warning/60 bg-warning/10 p-3">
             <p className="text-sm font-semibold text-ink">确认提交询盘</p>
-            <p className="mt-1 text-xs text-ink-secondary">提交后将进入供应商报价流程，请核对以上信息。</p>
+            <dl className="mt-1.5 space-y-0.5 text-xs text-ink-secondary">
+              {pendingConfirm.draft.product_id !== undefined && pendingConfirm.draft.product_id !== null && (
+                <div>产品：{pendingConfirm.draft.product_id}</div>
+              )}
+              {pendingConfirm.draft.quantity !== undefined && pendingConfirm.draft.quantity !== null && (
+                <div>数量：{pendingConfirm.draft.quantity}</div>
+              )}
+              {pendingConfirm.draft.contact_name !== undefined && (
+                <div>联系人：{pendingConfirm.draft.contact_name}</div>
+              )}
+              {pendingConfirm.draft.contact_phone_masked !== undefined && (
+                <div>电话：{pendingConfirm.draft.contact_phone_masked}</div>
+              )}
+            </dl>
+            <p className="mt-1.5 text-[11px] text-ink-muted">提交后将进入供应商报价流程，请核对以上信息。</p>
             <div className="mt-2.5 flex gap-2">
               <Button size="sm" onClick={() => void send("", "confirm_inquiry")}>
                 确认提交
@@ -214,7 +291,7 @@ export function ChatWidget(): ReactElement {
         )}
       </div>
 
-      {/* Input */}
+      {/* Input：busy 时发送钮变停止钮 */}
       <form onSubmit={onSubmit} className="flex items-end gap-2 border-t border-line bg-surface p-3">
         <div className="relative flex-1">
           <textarea
@@ -232,14 +309,25 @@ export function ChatWidget(): ReactElement {
           />
           <User className="pointer-events-none absolute bottom-2 right-3 h-3.5 w-3.5 text-ink-muted" />
         </div>
-        <Button
-          type="submit"
-          disabled={busy || !input.trim()}
-          aria-label="发送"
-          className="h-9 w-9 !px-0 transition-transform active:scale-90"
-        >
-          <SendHorizonal className="h-4 w-4" />
-        </Button>
+        {busy ? (
+          <Button
+            type="button"
+            onClick={stop}
+            aria-label="停止生成"
+            className="h-9 w-9 !px-0 transition-transform active:scale-90"
+          >
+            <Square className="h-3.5 w-3.5" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            disabled={!input.trim()}
+            aria-label="发送"
+            className="h-9 w-9 !px-0 transition-transform active:scale-90"
+          >
+            <SendHorizonal className="h-4 w-4" />
+          </Button>
+        )}
       </form>
       <p className="pb-2 text-center text-[11px] text-ink-muted">
         内容由 AI 生成 · 价格与货期以供应商确认为准

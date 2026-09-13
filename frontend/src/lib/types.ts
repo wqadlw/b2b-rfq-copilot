@@ -33,6 +33,8 @@ export interface ChatEventData {
   message?: string;
   tool?: string;
   confirm_id?: string;
+  draft_json?: string;
+  draft?: Record<string, unknown>;
   index?: number;
   title?: string;
   trust?: string;
@@ -53,4 +55,6 @@ export interface ChatMessage {
   statusLine?: string;
   inquiryCreated?: boolean;
   citations?: Citation[];
+  error?: boolean;
+  feedback?: "helpful" | "not_helpful" | null;
 }
