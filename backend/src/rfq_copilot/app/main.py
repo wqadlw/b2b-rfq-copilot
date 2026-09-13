@@ -34,6 +34,16 @@ def get_runtime() -> Runtime:
     return _RUNTIME
 
 
+def _check_internal_token(request: Request) -> dict[str, str] | None:
+    """X-Internal-Token 校验；配置缺失即拒绝（防裸奔）。"""
+    import os
+    expected = os.environ.get("INTERNAL_API_TOKEN", "")
+    provided = request.headers.get("X-Internal-Token", "")
+    if not expected or not provided or expected != provided:
+        return {"code": "UPSTREAM_AUTH", "message": "invalid internal token"}
+    return None
+
+
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -109,7 +119,10 @@ def create_app() -> FastAPI:
 
     @app.post("/api/v1/knowledge")
     async def add_knowledge(request: Request) -> dict[str, Any]:
-        """运营自助添加知识文档（运行时生效，无需重启）。"""
+        """运营自助添加知识文档（运行时生效，无需重启）。需 X-Internal-Token。"""
+        token_err = _check_internal_token(request)
+        if token_err:
+            return token_err
         rt = get_runtime()
         if rt.deps.rag is None:
             return {"code": "PORT_DISABLED", "message": "知识库未启用"}
@@ -135,7 +148,10 @@ def create_app() -> FastAPI:
         return {"doc_id": doc_id, "chunks": len(chunks), "status": "ingested"}
 
     @app.delete("/api/v1/knowledge/{doc_id}")
-    async def delete_knowledge(doc_id: str) -> dict[str, Any]:
+    async def delete_knowledge(doc_id: str, request: Request) -> dict[str, Any]:
+        token_err = _check_internal_token(request)
+        if token_err:
+            return token_err
         rt = get_runtime()
         if rt.deps.rag is None:
             return {"code": "PORT_DISABLED", "message": "知识库未启用"}
