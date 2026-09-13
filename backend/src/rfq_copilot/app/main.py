@@ -133,7 +133,9 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "知识库未启用"})
         try:
             body = await request.json()
-        except UnicodeDecodeError:
+        except ValueError:
+            # JSONDecodeError 与 UnicodeDecodeError 均为 ValueError 子类：
+            # 覆盖坏语法与非法 UTF-8 两种坏请求体
             raise HTTPException(
                 status_code=400,
                 detail={"code": "INVALID_JSON", "message": "请求体必须是合法的 UTF-8 JSON"},
