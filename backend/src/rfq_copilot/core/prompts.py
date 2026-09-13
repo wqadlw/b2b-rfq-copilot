@@ -57,6 +57,11 @@ class PromptRegistry:
         except KeyError as exc:
             raise ConfigError(f"prompt template not found: {name}") from exc
 
+    def render_static(self, name: str) -> str:
+        """Render template WITHOUT variable injection — byte-identical across calls
+        to maximize LLM provider prefix cache hits."""
+        return self.get(name).body
+
     def render(self, name: str, **variables: str | list[str] | None) -> str:
         tpl = self.get(name)
         out = tpl.body

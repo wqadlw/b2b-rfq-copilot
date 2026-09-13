@@ -29,6 +29,8 @@ from rfq_copilot.ports.lead_distribution import LeadDistributionPort
 from rfq_copilot.ports.product_catalog import ProductCatalogPort, ProductSearchQuery
 from rfq_copilot.ports.supplier_directory import SupplierDirectoryPort
 
+MAX_SEARCH_ITEMS = 3
+
 INTENT_ENUM = frozenset(
     {
         "product_inquiry",
@@ -212,7 +214,7 @@ def _respond_node(deps: GraphDeps) -> Any:
             result = await _call_tool(tools["search_products"], ProductSearchQuery(keyword=message[:40]))
             events.append(("tool_call", {"tool": "search_products", "status": "done"}))
             lines = ["为您找到以下产品（并列供参考）："]
-            for item in result.items[:3]:
+            for item in result.items[:MAX_SEARCH_ITEMS]:
                 specs = "；".join(f"{k}:{v}" for k, v in list(item.specs.items())[:2])
                 price = item.price_display.text
                 if item.price_display.mode == "shown":
