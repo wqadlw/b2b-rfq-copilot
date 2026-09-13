@@ -25,6 +25,8 @@ export async function createSession(userRef: string | null = null): Promise<stri
 interface StreamOptions {
   sessionId: string;
   message: string;
+  pageType?: string;
+  userRef?: string | null;
   action?: "confirm_inquiry" | "cancel_inquiry";
   contact?: { name?: string; phone?: string } | null;
   quantity?: number | null;
@@ -34,7 +36,18 @@ interface StreamOptions {
 }
 
 export async function streamChat(options: StreamOptions): Promise<void> {
-  const { onEvent, signal, ...body } = options;
+  const { onEvent, signal } = options;
+  // 后端契约是 snake_case（ChatRequest）——禁止直接透传前端驼峰键
+  const body = {
+    session_id: options.sessionId,
+    message: options.message,
+    page_type: options.pageType,
+    product_id: options.productId,
+    user_ref: options.userRef,
+    contact: options.contact,
+    quantity: options.quantity,
+    action: options.action,
+  };
   await fetchEventSource(`${ENDPOINT}/api/v1/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
