@@ -49,6 +49,22 @@ def test_post_missing_fields_is_400(client: TestClient) -> None:
     assert r.json()["detail"]["code"] == "MISSING_FIELDS"
 
 
+def test_post_invalid_utf8_is_400(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/knowledge",
+        content=b'{"doc_id": "t", "title": "\xb2\xb2", "content": "c"}',
+        headers={"X-Internal-Token": TOKEN, "Content-Type": "application/json"},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "INVALID_JSON"
+
+
+def test_post_non_object_body_is_400(client: TestClient) -> None:
+    r = client.post("/api/v1/knowledge", json=["not", "an", "object"], headers={"X-Internal-Token": TOKEN})
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "INVALID_JSON"
+
+
 def test_add_and_remove_roundtrip(client: TestClient) -> None:
     headers = {"X-Internal-Token": TOKEN}
     r = client.post(

@@ -131,7 +131,15 @@ def create_app() -> FastAPI:
         rt = get_runtime()
         if rt.deps.rag is None:
             raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "知识库未启用"})
-        body = await request.json()
+        try:
+            body = await request.json()
+        except UnicodeDecodeError:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_JSON", "message": "请求体必须是合法的 UTF-8 JSON"},
+            ) from None
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail={"code": "INVALID_JSON", "message": "请求体必须是 JSON 对象"})
         doc_id = body.get("doc_id", "")
         title = body.get("title", "")
         content = body.get("content", "")
