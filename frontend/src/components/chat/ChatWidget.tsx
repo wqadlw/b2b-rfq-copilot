@@ -190,6 +190,8 @@ export function ChatWidget(): ReactElement {
           } else if (name === "inquiry_created") {
             setPendingConfirm(null);
             updateLast({ inquiryCreated: true });
+          } else if (name === "wechat_guidance" && data.guidance) {
+            updateLast({ wechatGuidance: data.guidance });
           } else if (name === "error") {
             updateLast({ error: true });
           }

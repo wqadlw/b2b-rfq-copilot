@@ -3,7 +3,7 @@
  *  助手消息完成后带操作行（复制/👍/👎，P0 打磨）。 */
 
 import { useState, type ReactElement } from "react";
-import { Check, Copy, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Check, Copy, MessageCircle, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { cn } from "../../lib/utils";
 import type { ChatMessage } from "../../lib/types";
@@ -67,6 +67,12 @@ export function MessageBubble({
                 ? <Caret />
                 : ""}
           {message.inquiryCreated && <p className="mt-1 text-xs text-success">询盘已创建 ✓ 后台可查</p>}
+          {message.wechatGuidance && (
+            <p className="mt-1.5 flex items-center gap-1 text-xs text-primary">
+              <MessageCircle className="h-3 w-3" />
+              {message.wechatGuidance}
+            </p>
+          )}
         </div>
       </div>
       {showActions && (

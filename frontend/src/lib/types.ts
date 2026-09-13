@@ -26,6 +26,7 @@ export type ChatEventName =
   | "inquiry_created"
   | "handoff"
   | "error"
+  | "wechat_guidance"
   | "done";
 
 export interface ChatEventData {
@@ -41,6 +42,8 @@ export interface ChatEventData {
   inquiry_id?: string | number;
   code?: string;
   reason?: string;
+  qrcode_url?: string;
+  guidance?: string;
 }
 
 export interface Citation {
@@ -56,5 +59,6 @@ export interface ChatMessage {
   inquiryCreated?: boolean;
   citations?: Citation[];
   error?: boolean;
+  wechatGuidance?: string;
   feedback?: "helpful" | "not_helpful" | null;
 }
