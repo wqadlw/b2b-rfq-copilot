@@ -1,8 +1,7 @@
 """In-memory session store (M0). Production uses LangGraph PostgresSaver (M2).
 
-SessionState now carries merged entities across turns (slot filling) —
-"找无油泵" → {product_type: "无油泵"}, then "抽速 100 的" → {pumping_speed: "100"}
-get merged so the third turn has both entities available for inquiry creation.
+SessionState carries merged entities (slot filling) + rich messages (with
+timestamps, tool_calls, citations) for session replay in admin panels.
 """
 
 from dataclasses import dataclass, field
@@ -12,7 +11,7 @@ from dataclasses import dataclass, field
 class SessionState:
     session_id: str
     user_ref: str | None = None
-    messages: list[dict[str, str]] = field(default_factory=list)
+    messages: list[dict[str, object]] = field(default_factory=list)
     merged_entities: dict[str, str] = field(default_factory=dict)
 
 
@@ -25,10 +24,11 @@ class SessionStore:
             self._sessions[session_id] = SessionState(session_id=session_id, user_ref=user_ref)
         return self._sessions[session_id]
 
-    def append_message(self, session_id: str, role: str, content: str) -> None:
-        self.get_or_create(session_id).messages.append({"role": role, "content": content})
+    def append_message(self, session_id: str, role: str, content: str, **meta: object) -> None:
+        msg: dict[str, object] = {"role": role, "content": content, **meta}
+        self.get_or_create(session_id).messages.append(msg)
 
-    def messages(self, session_id: str) -> list[dict[str, str]]:
+    def messages(self, session_id: str) -> list[dict[str, object]]:
         return list(self.get_or_create(session_id).messages)
 
     def merge_entities(self, session_id: str, new_entities: dict[str, str]) -> dict[str, str]:

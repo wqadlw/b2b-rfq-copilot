@@ -33,12 +33,13 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
     """
     final_answer: str | None = None
     finish_reason = "answered"
+    tool_calls: list[str] = []
+    citations: list[dict[str, Any]] = []
     try:
         if isinstance(graph_input, dict):
             yield sse_text([("status", {"message": "正在理解您的需求"})])
         async for mode, chunk in rt.graph.astream(graph_input, config=config, stream_mode=["updates", "custom"]):
             if mode == "custom":
-                # 真流式 token：answer 节点经 get_stream_writer 推送的增量
                 if isinstance(chunk, dict) and "answer_delta" in chunk:
                     final_answer = (final_answer or "") + str(chunk["answer_delta"])
                     yield sse_text([("answer_delta", {"delta": str(chunk["answer_delta"])})])
@@ -56,6 +57,8 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
                     continue
                 for event in output.get("events", []):
                     yield sse_text([event])
+                for tc in output.get("tool_calls", []):
+                    tool_calls.append(tc)
                 answer = output.get("answer")
                 if answer:
                     final_answer = answer
@@ -66,7 +69,13 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
         yield sse_text([("done", {"finish_reason": "error"})])
         return
     if final_answer:
-        rt.store.append_message(str(config["configurable"]["thread_id"]), "assistant", final_answer)
+        tid = str(config["configurable"]["thread_id"])
+        meta: dict[str, Any] = {}
+        if tool_calls:
+            meta["tool_calls"] = tool_calls
+        if citations:
+            meta["citations"] = citations
+        rt.store.append_message(tid, "assistant", final_answer, **meta)
         for piece in _chunk_answer(final_answer):
             yield sse_text([("answer_delta", {"delta": piece})])
     yield sse_text([("done", {"finish_reason": finish_reason})])
