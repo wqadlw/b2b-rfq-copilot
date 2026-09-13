@@ -384,6 +384,10 @@ def _understand_node(deps: GraphDeps) -> Any:
             )
             raw = await deps.llm.complete_json(system, user)
             u = parse_understanding(raw)
+            # 多轮槽位合并：当前轮实体 + 历史累积（slot filling）
+            if u.get("entities"):
+                deps.store.merge_entities(state["session_id"], u["entities"])
+                u["entities"] = deps.store.merged_entities(state["session_id"])
         else:
             events.append(("status", {"message": "正在整理回答"}))
         return {"understanding": u, "route": str(u["route"]), "events": events}

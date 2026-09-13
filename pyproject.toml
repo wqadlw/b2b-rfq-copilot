@@ -50,7 +50,7 @@ mypy_path = "backend/src"
 files = ["backend/src"]
 
 [[tool.mypy.overrides]]
-module = ["langgraph.*", "langgraph_core.*", "asyncpg.*"]
+module = ["langgraph.*", "langgraph_core.*", "asyncpg.*", "langfuse.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
