@@ -1,8 +1,13 @@
-"""Repo policy scanner (authority: docs/policies/repo-policy.md). CI gate — exit 1 on hit."""
+"""Repo policy scanner (authority: docs/policies/repo-policy.md). CI gate — exit 1 on hit.
+
+Scans git-tracked files only (respects .gitignore). Files on disk that are
+properly gitignored (like .env for local development) are NOT flagged.
+"""
 
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,11 +18,8 @@ INTERNAL_PATHS = frozenset({".ai", "AGENTS.md", "PROJECT.md"})
 # The scanner itself holds detection signatures; exclude it from content matching
 SELF_EXEMPT = "scripts/check_repo_policy.py"
 
-# Files that must never exist in the repo
-FORBIDDEN_PATHS: tuple[str, ...] = (
-    ".env",
-    "02-vacuum-adapter-spec.md",
-)
+# Files that must never be tracked by git
+FORBIDDEN_TRACKED: frozenset[str] = frozenset({".env", "02-vacuum-adapter-spec.md"})
 
 # Content patterns that indicate leaked secrets or private-site markers
 PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -52,32 +54,53 @@ TEXT_SUFFIXES = {
 }
 
 
-def _iter_files() -> list[Path]:
-    files: list[Path] = []
-    for path in ROOT.rglob("*"):
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        rel = path.relative_to(ROOT)
-        if any(part in INTERNAL_PATHS for part in rel.parts):
-            continue  # internal governance surface (gitignored, ADR-007)
-        if rel.as_posix() == SELF_EXEMPT:
-            continue
-        if rel.as_posix() in FORBIDDEN_PATHS:
-            files.append(path)  # keep so main() can flag the forbidden file itself
-            continue
-        if path.is_file():
-            files.append(path)
-    return files
+def _git_tracked_files() -> list[str]:
+    """Return all files tracked by git (respects .gitignore automatically)."""
+    try:
+        out = subprocess.run(
+            ["git", "ls-files"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            shell=False,
+            cwd=str(ROOT),
+        )
+        return [f for f in out.stdout.splitlines() if f.strip()]
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
+def _git_is_tracked(rel_path: str) -> bool:
+    """Check if a specific path is tracked by git."""
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", rel_path],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            shell=False,
+            cwd=str(ROOT),
+        )
+        return out.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def main() -> int:
     hits: list[str] = []
-    for path in _iter_files():
-        rel = path.relative_to(ROOT).as_posix()
-        if rel in FORBIDDEN_PATHS:
-            hits.append(f"PATH  {rel}: forbidden file present")
+    tracked = _git_tracked_files()
+
+    # --- Forbidden tracked files ---
+    for rel in tracked:
+        if rel in FORBIDDEN_TRACKED:
+            hits.append(f"TRACKED  {rel}: forbidden file is tracked by git")
+
+    # --- Content pattern scan on tracked text files ---
+    for rel in tracked:
+        if rel in INTERNAL_PATHS or rel == SELF_EXEMPT:
             continue
-        if path.suffix not in TEXT_SUFFIXES:
+        path = ROOT / rel
+        if not path.is_file() or path.suffix not in TEXT_SUFFIXES:
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -89,14 +112,14 @@ def main() -> int:
                 if token in ALLOWED_STRINGS:
                     continue
                 line = text[: match.start()].count("\n") + 1
-                hits.append(f"TEXT  {rel}:{line}: {name} ({token[:12]}…)")
+                hits.append(f"TEXT    {rel}:{line}: {name} ({token[:12]}…)")
 
     if hits:
         print(f"REPO POLICY VIOLATIONS ({len(hits)}):")
         for hit in hits:
             print(f"  {hit}")
         return 1
-    print("repo policy check: clean")
+    print(f"repo policy check: clean ({len(tracked)} tracked files scanned)")
     return 0
 
 
