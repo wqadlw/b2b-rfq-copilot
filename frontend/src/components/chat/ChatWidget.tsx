@@ -50,7 +50,6 @@ export function ChatWidget(): ReactElement {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
-  const [restored, setRestored] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
@@ -70,7 +69,6 @@ export function ChatWidget(): ReactElement {
           if (parsed.length > 0) {
             setMessages(parsed);
             setSessionId(savedSid);
-            setRestored(true);
             return;
           }
         } catch { /* 解析失败走新建 */ }
