@@ -117,8 +117,20 @@ export function ChatWidget(): ReactElement {
   };
 
   const send = async (message: string, action?: "confirm_inquiry" | "cancel_inquiry"): Promise<void> => {
-    if (!sessionId || busy || (!message && !action)) return;
+    if (busy || (!message && !action)) return;
     setBusy(true);
+    // 自愈：会话创建失败（如引擎重启期间加载的页面）时，发送前自动重建会话
+    let sid = sessionId;
+    if (sid === null) {
+      try {
+        sid = await createSession(null);
+        setSessionId(sid);
+      } catch {
+        updateLast({ content: "无法连接引擎，请确认服务已启动后重试。", statusLine: undefined });
+        setBusy(false);
+        return;
+      }
+    }
     setPendingConfirm(null);
     if (message) {
       lastUserMessage.current = message;
@@ -129,7 +141,7 @@ export function ChatWidget(): ReactElement {
     abortRef.current = controller;
     try {
       await streamChat({
-        sessionId,
+        sessionId: sid,
         message,
         action,
         signal: controller.signal,
