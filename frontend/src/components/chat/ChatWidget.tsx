@@ -287,8 +287,8 @@ export function ChatWidget(): ReactElement {
       </div>
 
       {/* Input：busy 时发送钮变停止钮 */}
-      <form onSubmit={onSubmit} className="flex items-end gap-2 border-t border-line bg-surface p-3">
-        <div className="relative flex-1">
+      <form onSubmit={onSubmit} className="border-t border-line bg-surface p-3">
+        <div className="relative">
           <textarea
             ref={inputRef}
             value={input}
@@ -300,28 +300,28 @@ export function ChatWidget(): ReactElement {
             }}
             onKeyDown={onKeyDown}
             placeholder={busy ? "对方正在输入…" : "描述您的采购需求，如：找一台无油真空泵…"}
-            className="min-h-9 w-full resize-none rounded-xl border border-line bg-surface px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           />
+          {busy ? (
+            <button
+              type="button"
+              onClick={stop}
+              aria-label="停止生成"
+              className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white transition-transform active:scale-90"
+            >
+              <Square className="h-3 w-3" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              aria-label="发送"
+              className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white transition-all hover:bg-primary-hover active:scale-90 disabled:opacity-30"
+            >
+              <SendHorizonal className="h-4 w-4" />
+            </button>
+          )}
         </div>
-        {busy ? (
-          <Button
-            type="button"
-            onClick={stop}
-            aria-label="停止生成"
-            className="h-9 w-9 !px-0 transition-transform active:scale-90"
-          >
-            <Square className="h-3.5 w-3.5" />
-          </Button>
-        ) : (
-          <Button
-            type="submit"
-            disabled={!input.trim()}
-            aria-label="发送"
-            className="h-9 w-9 !px-0 transition-transform active:scale-90"
-          >
-            <SendHorizonal className="h-4 w-4" />
-          </Button>
-        )}
       </form>
       <p className="pb-2 text-center text-[11px] text-ink-muted">
         内容由 AI 生成 · 价格与货期以供应商确认为准
