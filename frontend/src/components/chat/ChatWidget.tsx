@@ -174,6 +174,8 @@ export function ChatWidget(): ReactElement {
         },
       });
     } catch {
+      // ai-chatbot 模式：出错不清输入，用户可直接改后重试
+      setInput(message || lastUserMessage.current);
       if (controller.signal.aborted) {
         updateLast({ content: "已停止生成。", statusLine: undefined });
       } else {
