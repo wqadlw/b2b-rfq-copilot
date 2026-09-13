@@ -300,7 +300,7 @@ export function ChatWidget(): ReactElement {
             }}
             onKeyDown={onKeyDown}
             placeholder={busy ? "对方正在输入…" : "描述您的采购需求，如：找一台无油真空泵…"}
-            className="w-full resize-none rounded-xl border border-line bg-surface px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="min-h-9 w-full resize-none rounded-xl border border-line bg-surface px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
         {busy ? (

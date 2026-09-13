@@ -66,6 +66,7 @@ def create_app() -> FastAPI:
 
             async def _limited() -> AsyncIterator[str]:
                 yield sse_text([("error", {"code": "RATE_LIMITED", "message": "请求过于频繁，请稍后再试"})])
+                yield sse_text([("answer_delta", {"delta": "请求过于频繁，请稍后再试。"})])
                 yield sse_text([("done", {"finish_reason": "rate_limited"})])
 
             return StreamingResponse(_limited(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})

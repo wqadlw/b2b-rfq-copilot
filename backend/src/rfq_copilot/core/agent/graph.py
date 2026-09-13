@@ -326,7 +326,7 @@ def _mask(phone: str) -> str:
 
 def _understand_node(deps: GraphDeps) -> Any:
     async def node(state: AgentState) -> dict[str, Any]:
-        events: list[tuple[str, dict[str, Any]]] = [("status", {"message": "正在理解您的需求"})]
+        events: list[tuple[str, dict[str, Any]]] = []
         deps.store.append_message(state["session_id"], "user", state.get("message", ""))
         u = _understanding_from_tools(state, deps)
         if u is None:

@@ -34,6 +34,8 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
     final_answer: str | None = None
     finish_reason = "answered"
     try:
+        if isinstance(graph_input, dict):
+            yield sse_text([("status", {"message": "正在理解您的需求"})])
         async for chunk in rt.graph.astream(graph_input, config=config, stream_mode="updates"):
             for node, output in chunk.items():
                 if node == "__interrupt__":
