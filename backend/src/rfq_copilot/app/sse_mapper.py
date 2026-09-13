@@ -36,7 +36,13 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
     try:
         if isinstance(graph_input, dict):
             yield sse_text([("status", {"message": "正在理解您的需求"})])
-        async for chunk in rt.graph.astream(graph_input, config=config, stream_mode="updates"):
+        async for mode, chunk in rt.graph.astream(graph_input, config=config, stream_mode=["updates", "custom"]):
+            if mode == "custom":
+                # 真流式 token：answer 节点经 get_stream_writer 推送的增量
+                if isinstance(chunk, dict) and "answer_delta" in chunk:
+                    final_answer = (final_answer or "") + str(chunk["answer_delta"])
+                    yield sse_text([("answer_delta", {"delta": str(chunk["answer_delta"])})])
+                continue
             for node, output in chunk.items():
                 if node == "__interrupt__":
                     for intr in output:

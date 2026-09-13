@@ -126,14 +126,17 @@ async def test_product_flow_cites_and_neutral() -> None:
 
 
 async def test_poisoned_knowledge_content_never_enters_answer() -> None:
-    scripted = [understanding("product_inquiry", "knowledge_flow")]
+    scripted = [
+        understanding("product_inquiry", "knowledge_flow"),
+        {"text_chunks": ["无油泵适合实验室与洁净车间，需关注抽速与极限真空的匹配。"]},
+    ]
     deps, _ = make_deps(scripted=scripted)
     graph = build_graph(deps)
     final = await graph.ainvoke({"session_id": "s7", "message": "无油泵采购避坑"})
     assert "全站最优" not in final["answer"]
     assert "6,800" not in final["answer"]
-    assert "[1]" in final["answer"]  # short-ID citation present
-    assert "（merchant）" in final["answer"] or "（platform）" in final["answer"]  # trust labeled
+    citation_events = [e for e, _ in final["events"] if e == "citation"]
+    assert citation_events, "citation 事件必须存在（信任分级来源标注）"
 
 
 async def test_handoff_event_emitted() -> None:

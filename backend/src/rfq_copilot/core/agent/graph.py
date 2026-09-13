@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any, TypedDict
 
 import structlog
+from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
@@ -22,7 +23,7 @@ from rfq_copilot.core.policies.refusal import RefusalPolicy, refusal_answer
 from rfq_copilot.core.prompts import PromptRegistry
 from rfq_copilot.core.rag.citation import validate_citations
 from rfq_copilot.core.rag.pipeline import RAGPipeline
-from rfq_copilot.ports.errors import ConfigError
+from rfq_copilot.ports.errors import ConfigError, CopilotError
 from rfq_copilot.ports.inquiry_sink import AiExtract, Contact, InquiryDraft, InquirySinkPort
 from rfq_copilot.ports.lead_distribution import LeadDistributionPort
 from rfq_copilot.ports.product_catalog import ProductCatalogPort, ProductSearchQuery
@@ -224,11 +225,34 @@ def _respond_node(deps: GraphDeps) -> Any:
             events.append(("tool_call", {"tool": "search_knowledge", "status": "running"}))
             context, chunks = await deps.rag.context_for(message)
             events.append(("retrieval", {"count": len(chunks), "trust": [c.trust_level for c in chunks]}))
-            lines = [f"[{i + 1}] {c.title}（{c.trust_level}）" for i, c in enumerate(chunks)]
-            answer = "根据站内资料：" + context + "\n" + "\n".join(lines)
-            answer, invalid = validate_citations(answer, len(chunks))
+            for i, c in enumerate(chunks, start=1):
+                events.append(("citation", {"index": i, "title": c.title, "trust": c.trust_level}))
+            # 真流式 LLM 回答：token 经 custom 通道实时推送（sse_mapper 转发 answer_delta）
+            writer = get_stream_writer()
+            answer_system = (
+                deps.prompts.render(
+                    "base_constitution", display_name=deps.manifest.display_name, suggested_questions=[]
+                )
+                + "\n\n"
+                + deps.prompts.render("security_constitution")
+            )
+            answer_system += "\n\n" + deps.prompts.render("citation_required_answer")
+            answer_user = "【问题】" + message + "\n\n【资料】\n" + context
+            pieces: list[str] = []
+            try:
+                async for token in deps.llm.stream_text(answer_system, answer_user):
+                    pieces.append(token)
+                    writer({"answer_delta": token})
+            except CopilotError as exc:
+                logger.warning("answer.stream.failed", error=str(exc))
+            answer = "".join(pieces)
+            if not answer.strip():
+                # 模型空答兜底：退回引用列表模板
+                lines = [f"[{i + 1}] {c.title}（{c.trust_level}）" for i, c in enumerate(chunks)]
+                answer = "根据站内资料：\n" + "\n".join(lines)
+            _, invalid = validate_citations(answer, len(chunks))
             if invalid:
-                logger.warning("citation.invalid", invalid=invalid)  # programmatic citations never trigger
+                logger.warning("citation.invalid", invalid=invalid)  # 流式后校验：违规引用记 trace
             answer += "\n如需进一步确认，欢迎提交询盘。"
         else:
             answer = "请补充更多信息，例如目标真空度、抽速、应用场景，我来帮您缩小范围。"
