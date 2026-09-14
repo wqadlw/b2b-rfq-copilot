@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
 from rfq_copilot.app.limiter import SlidingWindowLimiter
+from rfq_copilot.app.metrics import VALID_PERIODS
 from rfq_copilot.app.runtime import Runtime, build_runtime, seed_demo, ui_config
 from rfq_copilot.app.sse_mapper import map_graph_stream
 from rfq_copilot.config.settings import get_settings
@@ -188,6 +189,17 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "知识库未启用"})
         removed = rt.deps.rag.remove_doc(doc_id)
         return {"doc_id": doc_id, "chunks_removed": removed}
+
+    @app.get("/api/v1/analytics/summary")
+    async def analytics_summary(request: Request, period: str = "today") -> dict[str, Any]:
+        """运营统计看板：会话/轮次/FAQ 命中率/询盘/LLM 用量/延迟/热门问题。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        if period not in VALID_PERIODS:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_PERIOD", "message": "period 仅支持 today/week/month"},
+            )
+        return get_runtime().metrics.summary(period)
 
     @app.post("/api/v1/feedback")
     async def feedback(body: FeedbackRequest) -> dict[str, str]:

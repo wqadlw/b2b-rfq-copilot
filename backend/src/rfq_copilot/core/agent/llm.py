@@ -29,13 +29,22 @@ def _loads(content: str) -> dict[str, Any]:
 
 
 class OpenAICompatLLM:
-    """Thin OpenAI-compatible client: json_object completions + SSE text streaming."""
+    """Thin OpenAI-compatible client: json_object completions + SSE text streaming.
+
+    Usage counters (call_count / prompt_tokens_total / completion_tokens_total /
+    stream_chars_total) let the SSE mapper attribute per-turn consumption via
+    before/after snapshots — no changes needed at call sites.
+    """
 
     def __init__(self, base_url: str, api_key: str, model: str, timeout_seconds: float = 30.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._timeout = timeout_seconds
         self._headers = {"Authorization": f"Bearer {api_key}"}
+        self.call_count = 0
+        self.prompt_tokens_total = 0
+        self.completion_tokens_total = 0
+        self.stream_chars_total = 0
 
     async def complete_json(self, system: str, user: str) -> dict[str, Any]:
         payload = {
@@ -55,7 +64,12 @@ class OpenAICompatLLM:
         except httpx.HTTPError as exc:
             raise UpstreamUnavailableError(f"llm unreachable: {exc}") from exc
         resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
+        data = resp.json()
+        self.call_count += 1
+        usage = data.get("usage") or {}
+        self.prompt_tokens_total += int(usage.get("prompt_tokens") or 0)
+        self.completion_tokens_total += int(usage.get("completion_tokens") or 0)
+        content = data["choices"][0]["message"]["content"]
         return _loads(content)
 
     async def stream_text(self, system: str, user: str) -> AsyncIterator[str]:
@@ -79,6 +93,7 @@ class OpenAICompatLLM:
                 ) as resp,
             ):
                 resp.raise_for_status()
+                self.call_count += 1
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -91,6 +106,7 @@ class OpenAICompatLLM:
                         continue
                     delta = chunk["choices"][0].get("delta", {}).get("content")
                     if delta:
+                        self.stream_chars_total += len(delta)
                         yield delta
         except httpx.TimeoutException as exc:
             raise PortTimeoutError("llm stream timeout") from exc
@@ -108,17 +124,24 @@ class FakeLLM:
     def __init__(self, scripted: list[dict[str, Any]]) -> None:
         self._scripted = list(scripted)
         self.calls: list[tuple[str, str]] = []
+        self.call_count = 0
+        self.prompt_tokens_total = 0
+        self.completion_tokens_total = 0
+        self.stream_chars_total = 0
 
     async def complete_json(self, system: str, user: str) -> dict[str, Any]:
         self.calls.append((system, user))
+        self.call_count += 1
         if not self._scripted:
             raise AssertionError("FakeLLM exhausted")
         return self._scripted.pop(0)
 
     async def stream_text(self, system: str, user: str) -> AsyncIterator[str]:
         self.calls.append((system, user))
+        self.call_count += 1
         if not self._scripted:
             raise AssertionError("FakeLLM exhausted")
         item = self._scripted.pop(0)
         for piece in item.get("text_chunks", []):
+            self.stream_chars_total += len(piece)
             yield piece

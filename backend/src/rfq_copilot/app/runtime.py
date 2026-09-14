@@ -8,6 +8,7 @@ from typing import Any
 from langgraph.checkpoint.memory import MemorySaver
 
 from rfq_copilot.adapters.demo import data as demo_data
+from rfq_copilot.app.metrics import MetricsRegistry
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.core.agent.graph import GraphDeps, build_graph
 from rfq_copilot.core.agent.llm import LLMClient, OpenAICompatLLM
@@ -34,6 +35,7 @@ class Runtime:
     deps: GraphDeps
     graph: Any
     store: SessionStore
+    metrics: "MetricsRegistry"
 
 
 def _adapter_module(adapter: str) -> Any:
@@ -97,7 +99,7 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
         poisoned_ids=POISONED_IDS,
     )
     graph = build_graph(deps, checkpointer=MemorySaver())  # demo profile; prod swaps AsyncPostgresSaver
-    return Runtime(manifest=manifest, deps=deps, graph=graph, store=store)
+    return Runtime(manifest=manifest, deps=deps, graph=graph, store=store, metrics=MetricsRegistry())
 
 
 def ui_config(runtime: Runtime) -> dict[str, Any]:
