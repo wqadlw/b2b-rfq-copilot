@@ -6,12 +6,15 @@
 - 每个参数有明确的比较方向和数据类型
 """
 
+# 图内传入 ProductSummary（无 params）：oil_free 条件在 Summary 上视为不可判定，
+# 激活完整匹配需 get_detail 补全——一期可接受。
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
-from rfq_copilot.ports.product_catalog import ProductDetail
+from rfq_copilot.ports.product_catalog import ProductDetail, ProductSummary
 
 # 已知参数的比较方向和标签
 SPEC_DIRECTIONS: dict[str, str] = {
@@ -85,9 +88,9 @@ def _to_float(value: Any) -> float | None:
 
 
 def match_products(
-    products: list[ProductDetail],
+    products: list[ProductDetail] | list[ProductSummary],
     criteria: SpecCriteria,
-) -> list[tuple[ProductDetail, float]]:
+) -> list[tuple[ProductDetail | ProductSummary, float]]:
     """按规格条件匹配产品，返回 (产品, 匹配分) 按分数降序。
 
     评分规则：
@@ -96,7 +99,7 @@ def match_products(
     - 恰好等于用户要求 → +5
     - 不满足硬条件 → 排除
     """
-    scored: list[tuple[ProductDetail, float]] = []
+    scored: list[tuple[ProductDetail | ProductSummary, float]] = []
     for product in products:
         score = _score_product(product, criteria)
         if score is not None:
@@ -105,7 +108,7 @@ def match_products(
     return scored
 
 
-def _score_product(product: ProductDetail, criteria: SpecCriteria) -> float | None:
+def _score_product(product: ProductDetail | ProductSummary, criteria: SpecCriteria) -> float | None:
     """对单个产品打分；不满足硬条件返回 None（排除）。"""
     score = 50.0
     specs = product.specs
@@ -127,9 +130,10 @@ def _score_product(product: ProductDetail, criteria: SpecCriteria) -> float | No
         score += 10
 
     if criteria.oil_free is not None:
-        oil_free_val = product.params.get("无油", "")
-        if criteria.oil_free and oil_free_val != "是":
+        params = getattr(product, "params", None)  # ProductSummary 无 params 字段
+        if isinstance(params, dict) and criteria.oil_free and params.get("无油", "") != "是":
             return None
+        # 无 params 属性（Summary）：oil_free 视为不可判定，跳过该条件继续评分
 
     return score
 
