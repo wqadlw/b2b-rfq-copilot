@@ -124,6 +124,21 @@ def create_app() -> FastAPI:
     async def messages(session_id: str) -> dict[str, Any]:
         return {"messages": get_runtime().store.messages(session_id), "has_more": False}
 
+    @app.get("/api/v1/sessions/{session_id}/replay")
+    async def session_replay(session_id: str, request: Request) -> dict[str, Any]:
+        """运营会话回放：完整消息流 + 累计槽位 + 引用/工具调用/事件轨迹。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        state = get_runtime().store.find(session_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail={"code": "SESSION_NOT_FOUND", "message": "会话不存在"})
+        return {
+            "session_id": session_id,
+            "user_ref": state.user_ref,
+            "merged_entities": state.merged_entities,
+            "message_count": len(state.messages),
+            "messages": state.messages,
+        }
+
     @app.post("/api/v1/knowledge")
     async def add_knowledge(request: Request) -> dict[str, Any]:
         """运营自助添加知识文档（运行时生效，无需重启）。需 X-Internal-Token。"""

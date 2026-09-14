@@ -35,6 +35,7 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
     finish_reason = "answered"
     tool_calls: list[str] = []
     citations: list[dict[str, Any]] = []
+    event_trail: list[tuple[str, dict[str, Any]]] = []
     try:
         if isinstance(graph_input, dict):
             yield sse_text([("status", {"message": "正在理解您的需求"})])
@@ -50,12 +51,16 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
                         payload = getattr(intr, "value", None) or {}
                         confirm_id = payload.get("confirm_id", "")
                         draft = payload.get("draft_json", "")
+                        event_trail.append(("inquiry_confirm", {"confirm_id": confirm_id}))
                         yield sse_text([("inquiry_confirm", {"confirm_id": confirm_id, "draft_json": draft})])
                         finish_reason = "awaiting_confirmation"
                     continue
                 if not isinstance(output, dict):
                     continue
                 for event in output.get("events", []):
+                    if event[0] == "citation":
+                        citations.append(event[1])
+                    event_trail.append(event)
                     yield sse_text([event])
                 for tc in output.get("tool_calls", []):
                     tool_calls.append(tc)
@@ -75,6 +80,8 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
             meta["tool_calls"] = tool_calls
         if citations:
             meta["citations"] = citations
+        if event_trail:
+            meta["events"] = event_trail
         rt.store.append_message(tid, "assistant", final_answer, **meta)
         for piece in _chunk_answer(final_answer):
             yield sse_text([("answer_delta", {"delta": piece})])

@@ -1,10 +1,11 @@
 """In-memory session store (M0). Production uses LangGraph PostgresSaver (M2).
 
 SessionState carries merged entities (slot filling) + rich messages (with
-timestamps, tool_calls, citations) for session replay in admin panels.
+timestamps, tool_calls, citations, event trail) for session replay in admin panels.
 """
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -24,8 +25,17 @@ class SessionStore:
             self._sessions[session_id] = SessionState(session_id=session_id, user_ref=user_ref)
         return self._sessions[session_id]
 
+    def find(self, session_id: str) -> SessionState | None:
+        """Read-only lookup — does NOT create an empty session (replay 404 semantics)."""
+        return self._sessions.get(session_id)
+
     def append_message(self, session_id: str, role: str, content: str, **meta: object) -> None:
-        msg: dict[str, object] = {"role": role, "content": content, **meta}
+        msg: dict[str, object] = {
+            "role": role,
+            "content": content,
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
+            **meta,
+        }
         self.get_or_create(session_id).messages.append(msg)
 
     def messages(self, session_id: str) -> list[dict[str, object]]:
