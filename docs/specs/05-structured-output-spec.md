@@ -1,6 +1,10 @@
 # 05 · STRUCTURED OUTPUT SPEC · 理解节点结构化输出契约
 
+<<<<<<< HEAD
 > 密级：公开 · 版本 v1.1 · 2026-09-14 · 关联：路由行为见 `01-port-spec.md` §4；用例断言见 `06-eval-spec.md`
+=======
+> 密级：公开 · 版本 v1.3 · 2026-09-14 · 关联：路由行为见 `01-port-spec.md` §4；用例断言见 `06-eval-spec.md`
+>>>>>>> ai/glm/product-comparison
 
 ## 1. 定位
 
@@ -60,9 +64,13 @@ unknown                无法识别
 
 意图 ↔ 路由映射在代码路由表（可测试），意图枚举变更 = 本规格版本变更 + A 族评测集同步。
 
+<<<<<<< HEAD
 映射补充：`spec_inquiry` 且实体含结构化规格参数（抽速/极限真空/无油等数值或布尔）→ `spec_match_flow`（规格匹配）；`supplier_search` / `certification_inquiry` → `supplier_flow`（供应商推荐，实体含 product_category 或 region）。
 
 映射补充（v1.3）：点名两个产品对比 → `compare_flow`（产品对比）。
+=======
+映射补充：`spec_inquiry` 且实体含结构化规格参数（抽速/极限真空/无油等数值或布尔）→ `spec_match_flow`（规格匹配）；`supplier_search` / `certification_inquiry` → `supplier_flow`（供应商推荐，实体含 product_category 或 region）；点名两个产品对比 → `compare_flow`（产品对比）。
+>>>>>>> ai/glm/product-comparison
 
 ## 4. 受控实体集（Core 内置）
 
@@ -80,7 +88,11 @@ unknown                无法识别
 
 A 族意图/实体用例直接断言本 Schema 字段；`needs_clarification`/`refusal_reason` 的一致性校验必须有专项用例（D 族）。
 
+<<<<<<< HEAD
 v1.2 · 2026-09-14 · 路由枚举补 spec_match_flow 与 supplier_flow（规格匹配激活 + 供应商推荐，详见 .ai/logs）
 v1.3 · 2026-09-14 · 路由枚举补 compare_flow（产品对比激活，详见 .ai/logs）
+=======
+v1.3 · 2026-09-14 · 路由枚举补 spec_match_flow / supplier_flow / compare_flow（规格匹配+供应商推荐+产品对比激活，详见 .ai/logs）
+>>>>>>> ai/glm/product-comparison
 ---
 *维护者：工程组 · 变更须同步路由表 + eval golden set*

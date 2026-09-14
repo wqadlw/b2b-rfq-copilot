@@ -1,6 +1,10 @@
 ---
 name: intent_entity_extraction
+<<<<<<< HEAD
 version: 2
+=======
+version: 4
+>>>>>>> ai/glm/product-comparison
 locale: zh-CN
 capability: understanding
 ---
