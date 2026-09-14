@@ -61,6 +61,7 @@ VALID_ROUTES = frozenset(
     {
         "product_flow",
         "selection_flow",
+        "spec_match_flow",
         "knowledge_flow",
         "inquiry_flow",
         "handoff_flow",
