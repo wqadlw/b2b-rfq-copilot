@@ -112,7 +112,10 @@ def create_app() -> FastAPI:
                     "匹配供应商，并协助创建询盘。当前未登录状态仍可浏览常见问题与平台说明。"
                 )
                 wechat = rtg.manifest.chat.wechat
-                events: list[tuple[str, dict[str, Any]]] = [("login_required", {"reason": "llm_turn"})]
+                suggestions = rtg.faq_registry.suggest(body.message, limit=3) if rtg.faq_registry else []
+                events: list[tuple[str, dict[str, Any]]] = [
+                    ("login_required", {"reason": "llm_turn", "suggestions": suggestions})
+                ]
                 if wechat.qrcode_url:
                     events.append(
                         (
@@ -373,6 +376,65 @@ def create_app() -> FastAPI:
         rt.store.set_status(session_id, "closed")
         rt.store.append_message(session_id, "system", "本次服务已结束，感谢您的咨询。")
         return {"session_id": session_id, "status": "closed"}
+
+    # ---- CS-faq：运营自助 FAQ 管理（chatwoot canned-response 思想，全部内部 token 门） ----
+
+    @app.get("/api/v1/faq")
+    async def list_faq(request: Request) -> dict[str, Any]:
+        """运营 FAQ 库列表。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        rt = get_runtime()
+        if rt.faq_registry is None:
+            raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "FAQ 未启用"})
+        return {"items": rt.faq_registry.list(), "total": len(rt.faq_registry.list())}
+
+    @app.post("/api/v1/faq")
+    async def add_faq(request: Request) -> dict[str, Any]:
+        """运营新增 FAQ 条目（运行时生效，立即参与游客免费答）。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        rt = get_runtime()
+        if rt.faq_registry is None:
+            raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "FAQ 未启用"})
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail={"code": "INVALID_JSON", "message": "请求体不是合法的 UTF-8 JSON"}
+            ) from exc
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail={"code": "INVALID_JSON", "message": "请求体必须是 JSON 对象"})
+        keywords = body.get("keywords")
+        answer = body.get("answer")
+        category = str(body.get("category", "通用"))
+        if not isinstance(keywords, list) or not keywords or not answer or not str(answer).strip():
+            raise HTTPException(
+                status_code=400, detail={"code": "MISSING_FIELDS", "message": "keywords（数组）与 answer 必填"}
+            )
+        entry = rt.faq_registry.add(
+            keywords=[str(k) for k in keywords],
+            answer=str(answer)[:500],
+            category=category[:20],
+        )
+        return {"entry": {"keywords": "、".join(entry.keywords), "answer": entry.answer, "category": entry.category}}
+
+    @app.delete("/api/v1/faq/{index}")
+    async def delete_faq(index: int, request: Request) -> dict[str, Any]:
+        """运营删除 FAQ 条目（按索引）。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        rt = get_runtime()
+        if rt.faq_registry is None:
+            raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "FAQ 未启用"})
+        if not rt.faq_registry.remove(index):
+            raise HTTPException(status_code=404, detail={"code": "FAQ_NOT_FOUND", "message": "条目不存在"})
+        return {"deleted": index}
+
+    @app.get("/api/v1/faq/suggest")
+    async def suggest_faq(request: Request, q: str = "") -> dict[str, Any]:
+        """ "你可能想问"推荐（公开端点：游客未命中时前端引导用，只暴露问题不暴露运营答案库全量）。"""
+        rt = get_runtime()
+        if rt.faq_registry is None:
+            return {"items": []}
+        return {"items": rt.faq_registry.suggest(q)}
 
     @app.post("/api/v1/feedback")
     async def feedback(body: FeedbackRequest) -> dict[str, str]:
