@@ -7,6 +7,7 @@ M2 will expand: real answer generation, checkpointer, full tool loop. Policy lay
 import hashlib
 import inspect
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Annotated, Any, TypedDict
 
@@ -23,6 +24,7 @@ from rfq_copilot.core.policies.output_filter import filter_output
 from rfq_copilot.core.policies.refusal import RefusalPolicy, refusal_answer
 from rfq_copilot.core.prompts import PromptRegistry
 from rfq_copilot.core.rag.citation import validate_citations
+from rfq_copilot.core.rag.compare import build_compare_matrix, render_compare_answer
 from rfq_copilot.core.rag.pipeline import RAGPipeline
 from rfq_copilot.core.rag.spec_matcher import extract_spec_criteria, match_products
 from rfq_copilot.ports.errors import ConfigError, CopilotError
@@ -61,6 +63,7 @@ VALID_ROUTES = frozenset(
     {
         "product_flow",
         "selection_flow",
+        "compare_flow",
         "knowledge_flow",
         "inquiry_flow",
         "handoff_flow",
@@ -294,6 +297,31 @@ def _respond_node(deps: GraphDeps) -> Any:
             if invalid:
                 logger.warning("citation.invalid", invalid=invalid)  # 流式后校验：违规引用记 trace
             answer += "\n如需进一步确认，欢迎提交询盘。"
+        elif route == "compare_flow" and "get_product_detail" in tools:
+            # 产品对比：两个 get_detail → 对比矩阵；中立并列，不判优劣（port-spec §3.2）
+            tool_calls.append("get_product_detail")
+            events.append(("tool_call", {"tool": "get_product_detail", "status": "running"}))
+            ids = re.findall(r"demo-p-\d+", message)[:2]
+            if len(ids) < 2:
+                answer = "请提供两个要对比的产品，例如：对比 demo-p-001 和 demo-p-002。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            details = [await _call_tool(tools["get_product_detail"], pid) for pid in ids]
+            details = [d for d in details if d is not None]
+            if len(details) < 2:
+                answer = "有一个产品未找到，请确认产品编号后重试。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            events.append(("tool_call", {"tool": "get_product_detail", "status": "done"}))
+            for product in details:
+                events.append(
+                    (
+                        "citation",
+                        {"title": product.name, "url": product.url, "trust": "merchant"},
+                    )
+                )
+                if product.price_display.mode == "shown":
+                    whitelist.add(product.price_display.text.strip())
+            matrix = build_compare_matrix(details)
+            answer = render_compare_answer(matrix)
         else:
             answer = "请补充更多信息，例如目标真空度、抽速、应用场景，我来帮您缩小范围。"
 
@@ -503,6 +531,7 @@ def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
             "product_flow": "respond",
             "selection_flow": "respond",
             "knowledge_flow": "respond",
+            "compare_flow": "respond",
             "clarify": "respond",
             "faq_answer": "respond",
             "spec_match_flow": "respond",
