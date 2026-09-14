@@ -11,6 +11,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
+from rfq_copilot.app.guest_paths import (
+    detect_guest_query,
+    guest_knowledge_answer,
+    guest_search_answer,
+    looks_like_knowledge_query,
+)
 from rfq_copilot.app.limiter import DailyTokenBudget, SlidingWindowLimiter
 from rfq_copilot.app.metrics import VALID_PERIODS
 from rfq_copilot.app.runtime import Runtime, build_runtime, seed_demo, ui_config
@@ -105,6 +111,43 @@ def create_app() -> FastAPI:
         if get_settings().guest_tier_enabled and not body.user_ref and body.message.strip() and not body.action:
             rtg = get_runtime()
             faq = rtg.deps.faq_matcher.match(body.message) if rtg.deps.faq_matcher else None
+
+            async def _guest_stream(answer_text: str, events: list[tuple[str, dict[str, Any]]]) -> StreamingResponse:
+                async def _gen() -> AsyncIterator[str]:
+                    yield sse_text([("status", {"message": "正在查询"})])
+                    yield sse_text([("answer_delta", {"delta": answer_text})])
+                    for ev in events:
+                        yield sse_text([ev])
+                    yield sse_text([("done", {"finish_reason": "answered"})])
+
+                return StreamingResponse(
+                    _gen(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
+
+            # G0: FAQ hit -> free answer
+            if faq is not None:
+                rtg.store.append_message(body.session_id, "user", body.message)
+                rtg.store.append_message(body.session_id, "assistant", faq)
+                return await _guest_stream(faq, [])
+
+            # G2 优先：知识/对比类问题先走引用（"X和Y有什么区别"即使含产品词也是知识问答）
+            if looks_like_knowledge_query(body.message) and rtg.deps.rag is not None:
+                rtg.store.append_message(body.session_id, "user", body.message)
+                knowledge_result = await guest_knowledge_answer(body.message, rtg.deps.rag, rtg.manifest)
+                if knowledge_result is not None:
+                    rtg.store.append_message(body.session_id, "assistant", knowledge_result["answer"])
+                    return await _guest_stream(knowledge_result["answer"], knowledge_result["events"])
+
+            # G1: explicit product word / demo id -> direct catalog search (0 token)
+            guest_query = detect_guest_query(body.message)
+            if guest_query:
+                rtg.store.append_message(body.session_id, "user", body.message)
+                result = await guest_search_answer(guest_query, rtg.deps.catalog, rtg.manifest)
+                rtg.store.append_message(body.session_id, "assistant", result["answer"])
+                return await _guest_stream(result["answer"], result["events"])
+
             if faq is None and not _is_zero_token_intent(body.message):
                 rtg.store.append_message(body.session_id, "user", body.message)
                 guidance = (

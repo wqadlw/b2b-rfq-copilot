@@ -72,10 +72,11 @@ def _answer(text: str) -> str:
     return answer
 
 
-def test_guest_llm_turn_blocked_with_login_required(guest_client: TestClient) -> None:
+def test_guest_open_chat_blocked_with_login_required(guest_client: TestClient) -> None:
+    """开放对话（选型/无产品词）仍走登录墙；含产品词的走 G1 免费直搜（另测）。"""
     raw = b""
     with guest_client.stream(
-        "POST", "/api/v1/chat/stream", json={"session_id": "tier-1", "message": "推荐几款真空泵"}
+        "POST", "/api/v1/chat/stream", json={"session_id": "tier-1", "message": "帮我做一个完整的选型方案"}
     ) as r:
         assert r.status_code == 200
         raw = b"".join(r.iter_bytes())
@@ -108,7 +109,7 @@ def test_logged_in_user_bypasses_guest_gate(guest_client: TestClient) -> None:
     with guest_client.stream(
         "POST",
         "/api/v1/chat/stream",
-        json={"session_id": "tier-4", "message": "推荐几款真空泵", "user_ref": "user-9"},
+        json={"session_id": "tier-4", "message": "帮我做一个完整的选型方案", "user_ref": "user-9"},
     ) as r:
         assert r.status_code == 200
         raw = b"".join(r.iter_bytes())
