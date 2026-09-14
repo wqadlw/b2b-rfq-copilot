@@ -33,7 +33,7 @@
 | `confidence` | float | 0~1；`< 0.6` 时 runtime 强制 `needs_human`（low_confidence） |
 | `entities` | dict | 键为受控实体集（§4）+ adapter 扩展键（`x_*` 前缀）；值一律字符串或布尔，禁止嵌套对象 |
 | `missing_fields` | list | ⊆ manifest `inquiry_sink.required_fields ∪ optional_fields`；无 inquiry_sink 时恒空 |
-| `route` | enum | 一期 8 值：`product_flow / selection_flow / spec_match_flow / inquiry_flow / knowledge_flow / handoff_flow / clarify / refuse_fabrication` |
+| `route` | enum | 一期 10 值：`product_flow / selection_flow / spec_match_flow / supplier_flow / compare_flow / inquiry_flow / knowledge_flow / handoff_flow / clarify / refuse_fabrication` |
 | `needs_clarification` | bool | 与 `missing_fields`/`unknown` 意图联动，由 runtime 校验一致性 |
 | `needs_human` / `human_reason` | bool / enum | reason 枚举见 port-spec §6.5 关联的站点约定（complex_selection/customization/complaint/legal/user_request/low_confidence/repeated_failure…） |
 | `refusal_reason` | enum? | `pricing_disabled / lead_time_disabled / stock_disabled / content_policy`；非空时 route 必为 `refuse_fabrication`，回答走模板 |
@@ -60,7 +60,9 @@ unknown                无法识别
 
 意图 ↔ 路由映射在代码路由表（可测试），意图枚举变更 = 本规格版本变更 + A 族评测集同步。
 
-映射补充（v1.1）：`spec_inquiry` 且实体含结构化规格参数（抽速/极限真空/无油等数值或布尔）→ `spec_match_flow`（规格匹配）。
+映射补充：`spec_inquiry` 且实体含结构化规格参数（抽速/极限真空/无油等数值或布尔）→ `spec_match_flow`（规格匹配）；`supplier_search` / `certification_inquiry` → `supplier_flow`（供应商推荐，实体含 product_category 或 region）。
+
+映射补充（v1.3）：点名两个产品对比 → `compare_flow`（产品对比）。
 
 ## 4. 受控实体集（Core 内置）
 
@@ -78,7 +80,7 @@ unknown                无法识别
 
 A 族意图/实体用例直接断言本 Schema 字段；`needs_clarification`/`refusal_reason` 的一致性校验必须有专项用例（D 族）。
 
-v1.1 · 2026-09-14 · 路由枚举补 spec_match_flow（规格匹配功能激活，详见 .ai/logs）
-
+v1.2 · 2026-09-14 · 路由枚举补 spec_match_flow 与 supplier_flow（规格匹配激活 + 供应商推荐，详见 .ai/logs）
+v1.3 · 2026-09-14 · 路由枚举补 compare_flow（产品对比激活，详见 .ai/logs）
 ---
 *维护者：工程组 · 变更须同步路由表 + eval golden set*

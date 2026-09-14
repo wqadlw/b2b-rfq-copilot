@@ -21,6 +21,7 @@ from rfq_copilot.core.memory import SessionStore
 from rfq_copilot.core.policies.faq_matcher import FaqMatcher
 from rfq_copilot.core.policies.output_filter import filter_output
 from rfq_copilot.core.policies.refusal import RefusalPolicy, refusal_answer
+from rfq_copilot.core.policies.supplier_match import match_suppliers
 from rfq_copilot.core.prompts import PromptRegistry
 from rfq_copilot.core.rag.citation import validate_citations
 from rfq_copilot.core.rag.pipeline import RAGPipeline
@@ -29,7 +30,7 @@ from rfq_copilot.ports.errors import ConfigError, CopilotError
 from rfq_copilot.ports.inquiry_sink import AiExtract, Contact, InquiryDraft, InquirySinkPort
 from rfq_copilot.ports.lead_distribution import LeadDistributionPort
 from rfq_copilot.ports.product_catalog import ProductCatalogPort, ProductSearchQuery
-from rfq_copilot.ports.supplier_directory import SupplierDirectoryPort
+from rfq_copilot.ports.supplier_directory import SupplierDirectoryPort, SupplierSearchQuery
 
 MAX_SEARCH_ITEMS = 3
 
@@ -62,6 +63,7 @@ VALID_ROUTES = frozenset(
         "product_flow",
         "selection_flow",
         "spec_match_flow",
+        "supplier_flow",
         "knowledge_flow",
         "inquiry_flow",
         "handoff_flow",
@@ -295,6 +297,37 @@ def _respond_node(deps: GraphDeps) -> Any:
             if invalid:
                 logger.warning("citation.invalid", invalid=invalid)  # 流式后校验：违规引用记 trace
             answer += "\n如需进一步确认，欢迎提交询盘。"
+        elif route == "supplier_flow" and "get_suppliers" in tools and deps.suppliers is not None:
+            # 供应商智能推荐：评分驱动筛选与匹配原因；呈现并列陈述（port-spec §3.2 中立性）
+            tool_calls.append("get_suppliers")
+            events.append(("tool_call", {"tool": "get_suppliers", "status": "running"}))
+            entities = state.get("understanding", {}).get("entities", {})
+            category = entities.get("product_category")
+            region = entities.get("region") or entities.get("x_region")
+            result = await _call_tool(
+                tools["get_suppliers"],
+                SupplierSearchQuery(keyword=str(category) if category else None),
+            )
+            events.append(("tool_call", {"tool": "get_suppliers", "status": "done"}))
+            sup_matched = match_suppliers(
+                result.items,
+                category=str(category) if category else None,
+                region=str(region) if region else None,
+            )
+            relevant = sup_matched
+            lines = ["以下是为您找到的供应商（并列供参考，可按需联系）："]
+            for m in relevant[:MAX_SEARCH_ITEMS]:
+                cert_text = "、".join(m.supplier.certifications) if m.supplier.certifications else "无认证信息"
+                region_text = m.supplier.region or "地区未标注"
+                reason_text = "；".join(m.reasons) if m.reasons else "按站点默认排序"
+                lines.append(f"- {m.supplier.name}（{region_text}｜{cert_text}）—— 匹配参考：{reason_text}")
+                events.append(
+                    (
+                        "citation",
+                        {"title": m.supplier.name, "url": m.supplier.url, "trust": "platform"},
+                    )
+                )
+            answer = "\n".join(lines)
         else:
             answer = "请补充更多信息，例如目标真空度、抽速、应用场景，我来帮您缩小范围。"
 
@@ -504,6 +537,7 @@ def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
             "product_flow": "respond",
             "selection_flow": "respond",
             "knowledge_flow": "respond",
+            "supplier_flow": "respond",
             "clarify": "respond",
             "faq_answer": "respond",
             "spec_match_flow": "respond",

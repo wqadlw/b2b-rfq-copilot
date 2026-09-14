@@ -20,10 +20,12 @@ capability: understanding
 4. `missing_fields` 仅列建询盘所缺的 manifest 必填/选填字段。
 5. 意图涉及被禁用能力（{{disabled_capabilities}}）时：`route="refuse_fabrication"` 且 `refusal_reason` 必填。
 6. 复杂选型/大额/非标/投诉/法律/用户主动要求 → `needs_human=true` 且 `human_reason` 必填。
-7. `route` 从以下 8 个枚举值中选一，按触发条件映射（不确定时用 `clarify`）：
-   - `product_flow`：要推荐/找产品
+7. `route` 从以下 10 个枚举值中选一，按触发条件映射（不确定时用 `clarify`）：
+   - `product_flow`：要推荐/找产品（具体产品）
    - `selection_flow`：选型建议
    - `spec_match_flow`：用户给出结构化规格参数（抽速/极限真空/无油等数值或布尔）要求匹配产品
+   - `supplier_flow`：找供应商/某类产品有哪些厂家/某地区有什么供应商（实体含 product_category 或 region）
+   - `compare_flow`：用户点名两个具体产品要求对比（消息含两个产品编号/名称）
    - `knowledge_flow`：知识/政策/流程问答
    - `inquiry_flow`：要创建询盘/提交需求
    - `handoff_flow`：转人工
