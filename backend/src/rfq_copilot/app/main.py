@@ -122,7 +122,9 @@ def create_app() -> FastAPI:
         return HealthResponse(status="ok", adapter=rt.manifest.adapter, profile="demo")
 
     @app.get("/api/v1/sessions/{session_id}/messages")
-    async def messages(session_id: str) -> dict[str, Any]:
+    async def messages(session_id: str, request: Request) -> dict[str, Any]:
+        """Session history. Data level equals /replay: requires X-Internal-Token."""
+        _check_internal_token(request)
         return {"messages": get_runtime().store.messages(session_id), "has_more": False}
 
     @app.get("/api/v1/sessions/{session_id}/replay")

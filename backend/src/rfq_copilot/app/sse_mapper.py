@@ -5,6 +5,7 @@ Also the single metrics observation point: sees routes, events, finish reasons,
 and per-turn LLM consumption (before/after snapshots of the client's counters).
 """
 
+import json
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -21,6 +22,29 @@ _CHUNK_SIZE = 24
 
 def _mask(phone: str) -> str:
     return f"{phone[:3]}****{phone[-4:]}" if len(phone) >= 7 else phone
+
+
+def _draft_payload(draft_json: str) -> dict[str, Any]:
+    """Flatten InquiryDraft JSON into the confirmation-card shape (03-api-spec section 2).
+
+    Authority fields consumed by ChatWidget: product_id / quantity /
+    contact_name / contact_phone_masked. draft_json stays in the event
+    payload for backward compatibility with existing consumers.
+    """
+    try:
+        raw = json.loads(draft_json) if draft_json else None
+    except ValueError:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    raw_contact = raw.get("contact")
+    contact = raw_contact if isinstance(raw_contact, dict) else {}
+    return {
+        "product_id": raw.get("product_id"),
+        "quantity": raw.get("quantity"),
+        "contact_name": contact.get("name"),
+        "contact_phone_masked": _mask(str(contact.get("phone") or "")),
+    }
 
 
 def _chunk_answer(answer: str) -> list[str]:
@@ -99,9 +123,12 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
                     for intr in output:
                         payload = getattr(intr, "value", None) or {}
                         confirm_id = payload.get("confirm_id", "")
-                        draft = payload.get("draft_json", "")
+                        draft_json = payload.get("draft_json", "")
+                        draft = _draft_payload(draft_json)
                         event_trail.append(("inquiry_confirm", {"confirm_id": confirm_id}))
-                        yield sse_text([("inquiry_confirm", {"confirm_id": confirm_id, "draft_json": draft})])
+                        yield sse_text(
+                            [("inquiry_confirm", {"confirm_id": confirm_id, "draft": draft, "draft_json": draft_json})]
+                        )
                         finish_reason = "awaiting_confirmation"
                     continue
                 if not isinstance(output, dict):

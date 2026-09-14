@@ -44,7 +44,7 @@
 | `retrieval` | `{"count": 4, "sources": [{"doc_id","title","trust"}]}` | 检索完成（trust=信任等级） |
 | `answer_delta` | `{"delta": "根据站内资料，"}` | 增量正文（拼接渲染） |
 | `citation` | `{"doc_id","title","section","trust","url?"}` | 单条引用（answer 中标注） |
-| `inquiry_confirm` | `{"confirm_id": "cfm_xxx", "draft": {产品/数量/需求摘要/联系人摘要/缺失字段}}` | **确认门**：请求用户显式确认询盘草稿 |
+| `inquiry_confirm` | `{"confirm_id": "cfm_xxx", "draft": {产品/数量/联系人/掩码电话}, "draft_json": "草稿原文 JSON 字符串（向后兼容保留）"}` | **确认门**：请求用户显式确认询盘草稿 |
 | `inquiry_created` | `{"inquiry_id": "1001", "state": "created"}` | 询盘创建成功（确认门通过后） |
 | `handoff` | `{"reason": "complex_selection", "priority": "high"}` | 转人工 |
 | `error` | `{"code": "UPSTREAM_TIMEOUT", "message": "…"}` | 错误（码表见 port-spec §8；Policy 类结果不走 error，走正常内容/模板） |
