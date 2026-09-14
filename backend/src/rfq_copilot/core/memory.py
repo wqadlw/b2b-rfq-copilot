@@ -6,6 +6,9 @@ timestamps, tool_calls, citations, event trail) for session replay in admin pane
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal
+
+SessionStatus = Literal["bot_serving", "handoff_pending", "human_serving", "closed"]
 
 
 @dataclass
@@ -14,6 +17,7 @@ class SessionState:
     user_ref: str | None = None
     messages: list[dict[str, object]] = field(default_factory=list)
     merged_entities: dict[str, str] = field(default_factory=dict)
+    status: SessionStatus = "bot_serving"
 
 
 class SessionStore:
@@ -49,3 +53,24 @@ class SessionStore:
 
     def merged_entities(self, session_id: str) -> dict[str, str]:
         return dict(self.get_or_create(session_id).merged_entities)
+
+    # ---- CS-1 session status machine (bot <-> agent handoff) ----
+
+    def status(self, session_id: str) -> SessionStatus:
+        return self.get_or_create(session_id).status
+
+    def set_status(self, session_id: str, status: SessionStatus) -> SessionStatus:
+        """Transition session status; unknown session creates a fresh one (bot_serving base)."""
+        state = self.get_or_create(session_id)
+        state.status = status
+        return state.status
+
+    def list_by_status(self, status: SessionStatus) -> list[SessionState]:
+        """Agent workbench: sessions filtered by status, newest message first."""
+
+        def _last_ts(s: SessionState) -> str:
+            last = s.messages[-1] if s.messages else {}
+            return str(last.get("ts", ""))
+
+        matched = [s for s in self._sessions.values() if s.status == status]
+        return sorted(matched, key=_last_ts, reverse=True)

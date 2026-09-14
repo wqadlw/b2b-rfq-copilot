@@ -110,6 +110,11 @@ def ui_config(runtime: Runtime) -> dict[str, Any]:
         "chat": {
             "welcome_message": m.chat.welcome_message,
             "suggested_questions": m.chat.suggested_questions,
+            "wechat": {
+                "qrcode_url": m.chat.wechat.qrcode_url,
+                "contact_name": m.chat.wechat.contact_name,
+                "guidance_text": m.chat.wechat.guidance_text,
+            },
         },
         "theme": {"primary": m.chat.theme_primary},
         "capabilities": {
