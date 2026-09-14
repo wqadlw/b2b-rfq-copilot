@@ -60,10 +60,19 @@ class CapabilitiesCfg(BaseModel):
     stock: CapabilityFlag
 
 
+class WechatCfg(BaseModel):
+    """CS-1.5: WeChat one-on-one contact (site-private QR; demo uses placeholder)."""
+
+    qrcode_url: str | None = None
+    contact_name: str | None = None
+    guidance_text: str | None = None
+
+
 class ChatCfg(BaseModel):
     welcome_message: str | None = None
     suggested_questions: list[str] = Field(default_factory=list)
     theme_primary: str | None = None
+    wechat: WechatCfg = Field(default_factory=WechatCfg)
 
 
 class Manifest(BaseModel):

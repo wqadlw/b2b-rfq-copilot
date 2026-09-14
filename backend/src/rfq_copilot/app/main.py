@@ -88,6 +88,27 @@ def create_app() -> FastAPI:
                 yield sse_text([("done", {"finish_reason": "rate_limited"})])
 
             return StreamingResponse(_limited(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+        # CS-1: human_serving sessions bypass the LLM graph (0 token) — agent replies land
+        # in the message store; the user's message is recorded and echoed with a status note.
+        if get_runtime().store.status(body.session_id) == "human_serving" and not body.action:
+            rt2 = get_runtime()
+            rt2.store.append_message(body.session_id, "user", body.message)
+
+            async def _human_serving() -> AsyncIterator[str]:
+                last_agent = next(
+                    (m["content"] for m in reversed(rt2.store.messages(body.session_id)) if m["role"] == "agent"),
+                    None,
+                )
+                yield sse_text([("status", {"message": "人工服务中，坐席正在回复"})])
+                if last_agent:
+                    yield sse_text([("answer_delta", {"delta": last_agent})])
+                yield sse_text([("done", {"finish_reason": "human_serving"})])
+
+            return StreamingResponse(
+                _human_serving(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
         config: dict[str, Any] = {"configurable": {"thread_id": body.session_id}}
         if body.action:
             # resume an interrupted confirmation (interrupt()/Command pattern)
@@ -202,6 +223,71 @@ def create_app() -> FastAPI:
                 detail={"code": "INVALID_PERIOD", "message": "period 仅支持 today/week/month"},
             )
         return get_runtime().metrics.summary(period)
+
+    # ---- CS-1 agent takeover (all internal-token gated; authority: 03-api-spec §6) ----
+
+    @app.get("/api/v1/agent/sessions")
+    async def agent_sessions(request: Request, status: str = "handoff_pending") -> dict[str, Any]:
+        """坐席工作台会话列表（按状态过滤）。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        valid_statuses: tuple[str, ...] = ("bot_serving", "handoff_pending", "human_serving", "closed")
+        if status not in valid_statuses:
+            raise HTTPException(status_code=400, detail={"code": "INVALID_STATUS", "message": "未知会话状态"})
+        rt = get_runtime()
+        items = [
+            {
+                "session_id": state.session_id,
+                "status": str(state.status),
+                "user_ref": state.user_ref,
+                "message_count": len(state.messages),
+                "last_message": str(state.messages[-1].get("content", ""))[:80] if state.messages else "",
+                "last_ts": state.messages[-1].get("ts") if state.messages else None,
+            }
+            for state in rt.store.list_by_status(status)  # type: ignore[arg-type]
+        ]
+        return {"items": items, "total": len(items)}
+
+    @app.post("/api/v1/agent/sessions/{session_id}/takeover")
+    async def agent_takeover(session_id: str, request: Request) -> dict[str, Any]:
+        """坐席接管：handoff_pending/bot_serving → human_serving。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        rt = get_runtime()
+        state = rt.store.find(session_id)
+        if state is None or state.status == "closed":
+            raise HTTPException(status_code=404, detail={"code": "SESSION_NOT_FOUND", "message": "会话不存在或已结束"})
+        rt.store.set_status(session_id, "human_serving")
+        rt.store.append_message(session_id, "system", "坐席已接入，正在为您人工服务。")
+        return {"session_id": session_id, "status": "human_serving"}
+
+    @app.post("/api/v1/agent/sessions/{session_id}/reply")
+    async def agent_reply(session_id: str, request: Request) -> dict[str, Any]:
+        """坐席回复：直接落会话消息流（用户侧轮询/replay 可见），不进 LLM。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        rt = get_runtime()
+        state = rt.store.find(session_id)
+        if state is None or state.status != "human_serving":
+            msg = "会话不在人工服务状态"
+            raise HTTPException(status_code=409, detail={"code": "NOT_HUMAN_SERVING", "message": msg})
+        try:
+            body = await request.json()
+        except ValueError:
+            msg = "请求体不是合法 JSON"
+            raise HTTPException(status_code=400, detail={"code": "INVALID_JSON", "message": msg}) from None
+        if not isinstance(body, dict) or not str(body.get("content", "")).strip():
+            raise HTTPException(status_code=400, detail={"code": "MISSING_CONTENT", "message": "缺少回复内容"})
+        rt.store.append_message(session_id, "agent", str(body["content"])[:2000])
+        return {"session_id": session_id, "role": "agent", "delivered": True}
+
+    @app.post("/api/v1/agent/sessions/{session_id}/close")
+    async def agent_close(session_id: str, request: Request) -> dict[str, Any]:
+        """结束会话（human_serving/bot_serving → closed）。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        rt = get_runtime()
+        if rt.store.find(session_id) is None:
+            raise HTTPException(status_code=404, detail={"code": "SESSION_NOT_FOUND", "message": "会话不存在"})
+        rt.store.set_status(session_id, "closed")
+        rt.store.append_message(session_id, "system", "本次服务已结束，感谢您的咨询。")
+        return {"session_id": session_id, "status": "closed"}
 
     @app.post("/api/v1/feedback")
     async def feedback(body: FeedbackRequest) -> dict[str, str]:
