@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
-from rfq_copilot.app.limiter import SlidingWindowLimiter
+from rfq_copilot.app.limiter import DailyTokenBudget, SlidingWindowLimiter
 from rfq_copilot.app.metrics import VALID_PERIODS
 from rfq_copilot.app.runtime import Runtime, build_runtime, seed_demo, ui_config
 from rfq_copilot.app.sse_mapper import map_graph_stream
@@ -28,6 +28,7 @@ from rfq_copilot.schemas.events import sse_text
 
 _RUNTIME: Runtime | None = None
 _LIMITER = SlidingWindowLimiter()
+_BUDGET = DailyTokenBudget(get_settings().llm_daily_token_budget)
 
 
 def get_runtime() -> Runtime:
@@ -50,6 +51,16 @@ def _check_internal_token(request: Request) -> None:
             status_code=401,
             detail={"code": "UPSTREAM_AUTH", "message": "invalid internal token"},
         )
+
+
+def _is_zero_token_intent(message: str) -> bool:
+    """Guest-allowed deterministic paths: price/lead-time/stock refusals are template-only.
+
+    Mirrors graph._understanding_from_tools markers — kept in sync intentionally (guest tier
+    must not call the LLM, so we approximate the same trigger set cheaply).
+    """
+    markers = ("多少钱", "价格", "报价", "区间", "货期", "交期", "交货", "有货", "库存", "现货")
+    return any(m in message for m in markers)
 
 
 def create_app() -> FastAPI:
@@ -88,6 +99,80 @@ def create_app() -> FastAPI:
                 yield sse_text([("done", {"finish_reason": "rate_limited"})])
 
             return StreamingResponse(_limited(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+        # ---- Tiered access (guest gate): guests get 0-token paths only (FAQ/deterministic
+        # shortcuts); LLM-requiring turns require login (user_ref). Inquiry creation is the
+        # conversion goal — guided, not blocked: guests are told to log in first.
+        if get_settings().guest_tier_enabled and not body.user_ref and body.message.strip() and not body.action:
+            rtg = get_runtime()
+            faq = rtg.deps.faq_matcher.match(body.message) if rtg.deps.faq_matcher else None
+            if faq is None and not _is_zero_token_intent(body.message):
+                rtg.store.append_message(body.session_id, "user", body.message)
+                guidance = (
+                    "深度咨询需要登录后使用（免费注册）。登录后我可以为您：查产品参数、做选型对比、"
+                    "匹配供应商，并协助创建询盘。当前未登录状态仍可浏览常见问题与平台说明。"
+                )
+                wechat = rtg.manifest.chat.wechat
+                events: list[tuple[str, dict[str, Any]]] = [("login_required", {"reason": "llm_turn"})]
+                if wechat.qrcode_url:
+                    events.append(
+                        (
+                            "wechat_guidance",
+                            {
+                                "guidance": wechat.guidance_text or "扫码添加专属工程师一对一快速响应",
+                                "qrcode_url": wechat.qrcode_url,
+                                "contact_name": wechat.contact_name or "专属工程师",
+                            },
+                        )
+                    )
+
+                async def _guest_gate() -> AsyncIterator[str]:
+                    yield sse_text([("status", {"message": "需要登录"})])
+                    yield sse_text([("login_required", {"reason": "llm_turn"})])
+                    yield sse_text([("answer_delta", {"delta": guidance})])
+                    for ev in events[1:]:
+                        yield sse_text([ev])
+                    yield sse_text([("done", {"finish_reason": "login_required"})])
+
+                return StreamingResponse(
+                    _guest_gate(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
+
+        # ---- Tiered access (token budget): logged-in users have a daily completion-token
+        # budget; over budget -> wechat guidance, no LLM call this turn.
+        if body.user_ref and not body.action:
+            rtb = get_runtime()
+            if _BUDGET.remaining(body.user_ref) <= 0:
+                rtb.store.append_message(body.session_id, "user", body.message)
+                wechat = rtb.manifest.chat.wechat
+                budget_answer = "您今天的 AI 使用额度已用完，明天恢复。如需立即咨询，可扫码添加专属工程师一对一响应。"
+
+                async def _budget_gate() -> AsyncIterator[str]:
+                    yield sse_text([("status", {"message": "今日额度已用完"})])
+                    yield sse_text([("token_budget_exceeded", {"user_ref": body.user_ref})])
+                    yield sse_text([("answer_delta", {"delta": budget_answer})])
+                    if wechat.qrcode_url:
+                        yield sse_text(
+                            [
+                                (
+                                    "wechat_guidance",
+                                    {
+                                        "guidance": wechat.guidance_text or "扫码添加专属工程师一对一快速响应",
+                                        "qrcode_url": wechat.qrcode_url,
+                                        "contact_name": wechat.contact_name or "专属工程师",
+                                    },
+                                )
+                            ]
+                        )
+                    yield sse_text([("done", {"finish_reason": "token_budget"})])
+
+                return StreamingResponse(
+                    _budget_gate(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
+
         # CS-1: human_serving sessions bypass the LLM graph (0 token) — agent replies land
         # in the message store; the user's message is recorded and echoed with a status note.
         if get_runtime().store.status(body.session_id) == "human_serving" and not body.action:
