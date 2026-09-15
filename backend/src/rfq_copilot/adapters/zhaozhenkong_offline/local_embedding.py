@@ -10,13 +10,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from rfq_copilot.core.rag.embedding import EmbeddingClient
-
 DEFAULT_MODEL = "BAAI/bge-small-zh-v1.5"
 
 
-class LocalHuggingFaceEmbedding(EmbeddingClient):
-    """sentence-transformers 本地向量化（懒加载，进程内单例模型）。"""
+class LocalHuggingFaceEmbedding:
+    """sentence-transformers 本地向量化（懒加载，进程内单例模型）。
+
+    防腐层注意：本类不 import rfq_copilot.core（import-linter 契约：adapters 禁依赖
+    core）。它以结构化鸭子类型满足 core.rag.embedding.EmbeddingClient 协议
+    （async embed(list[str]) -> list[list[float]]），由组合根按协议注入。
+    """
 
     def __init__(self, model_name: str = DEFAULT_MODEL) -> None:
         self._model_name = model_name
