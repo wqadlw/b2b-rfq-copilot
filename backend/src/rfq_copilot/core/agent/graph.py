@@ -268,6 +268,19 @@ def _respond_node(deps: GraphDeps) -> Any:
                         whitelist.add(product.price_display.text.strip())
                     lines.append(f"  {product.name}（{product.supplier_name}）{specs_text}｜{price_text}")
                     events.append(("citation", {"title": product.name, "trust": "merchant"}))
+                    events.append(
+                        (
+                            "card",
+                            {
+                                "kind": "product",
+                                "name": product.name,
+                                "supplier": product.supplier_name,
+                                "price": price_text,
+                                "url": product.url,
+                                "specs": dict(list(product.specs.items())[:3]),
+                            },
+                        )
+                    )
                 answer = "\n".join(lines)
         elif route in {"product_flow", "selection_flow"} and "search_products" in tools:
             events.append(("tool_call", {"tool": "search_products", "status": "running"}))
@@ -282,6 +295,19 @@ def _respond_node(deps: GraphDeps) -> Any:
                     whitelist.add(price.strip())
                 lines.append(f"1. {item.name}（{item.supplier_name}）{specs}；价格：{price}。详情：{item.url}")
                 events.append(("citation", {"title": item.name, "url": item.url, "trust": "merchant"}))
+                events.append(
+                    (
+                        "card",
+                        {
+                            "kind": "product",
+                            "name": item.name,
+                            "supplier": item.supplier_name,
+                            "price": price,
+                            "url": item.url,
+                            "specs": dict(list(item.specs.items())[:3]),
+                        },
+                    )
+                )
             answer = "\n".join(lines) if result.items else "暂未找到匹配产品，您可以补充关键词或提交询盘。"
         elif route == "knowledge_flow" and deps.rag is not None:
             tool_calls.append("search_knowledge")
@@ -329,6 +355,21 @@ def _respond_node(deps: GraphDeps) -> Any:
                 events.append(("tool_call", {"tool": "get_suppliers", "status": "running"}))
                 events.append(("tool_call", {"tool": "get_suppliers", "status": "done"}))
                 events.append(("citation", {"title": _detail.name, "url": _detail.url, "trust": "merchant"}))
+                intro_src = _detail.description or ""
+                events.append(
+                    (
+                        "card",
+                        {
+                            "kind": "supplier",
+                            "name": _detail.name,
+                            "region": _detail.region,
+                            "certs": list(_detail.certifications),
+                            "main_products": list(_detail.main_products),
+                            "description": intro_src,
+                            "url": _detail.url,
+                        },
+                    )
+                )
                 intro = _detail.description or "该公司档案完善中。"
                 certs = "、".join(_detail.certifications) if _detail.certifications else "认证信息完善中"
                 region = _detail.region or "地区未标注"
@@ -368,6 +409,20 @@ def _respond_node(deps: GraphDeps) -> Any:
                     (
                         "citation",
                         {"title": m.supplier.name, "url": m.supplier.url, "trust": "platform"},
+                    )
+                )
+                events.append(
+                    (
+                        "card",
+                        {
+                            "kind": "supplier",
+                            "name": m.supplier.name,
+                            "region": m.supplier.region,
+                            "certs": list(m.supplier.certifications),
+                            "main_products": list(m.supplier.main_products),
+                            "description": "；".join(m.reasons) if m.reasons else "按站点默认排序",
+                            "url": m.supplier.url,
+                        },
                     )
                 )
             answer = "\n".join(lines)

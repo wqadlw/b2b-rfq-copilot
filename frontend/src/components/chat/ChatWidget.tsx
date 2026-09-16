@@ -13,6 +13,7 @@ import {
 import { SendHorizonal, Sparkles, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
+import { ProductCard, SupplierCard, type EntityCardData } from "./EntityCard";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
@@ -188,6 +189,25 @@ export function ChatWidget(): ReactElement {
               ];
               return [...prev.slice(0, -1), { ...last, citations: list }];
             });
+          } else if (name === "card" && data.kind) {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last === undefined) return prev;
+              const card: EntityCardData = {
+                kind: data.kind as "product" | "supplier",
+                name: String(data.name ?? ""),
+                supplier: data.supplier !== undefined ? String(data.supplier) : undefined,
+                price: data.price !== undefined ? String(data.price) : undefined,
+                url: data.url !== undefined ? String(data.url) : undefined,
+                specs: (data.specs as Record<string, string>) ?? undefined,
+                region: data.region !== undefined ? (data.region as string | null) : undefined,
+                certs: (data.certs as string[]) ?? undefined,
+                main_products: (data.main_products as string[]) ?? undefined,
+                description: data.description !== undefined ? String(data.description) : undefined,
+              };
+              const list = [...(last.cards ?? []), card];
+              return [...prev.slice(0, -1), { ...last, cards: list }];
+            });
           } else if (name === "inquiry_confirm") {
             setPendingConfirm({ confirmId: data.confirm_id ?? "", draft: data.draft ?? {} });
           } else if (name === "inquiry_created") {
@@ -294,6 +314,17 @@ export function ChatWidget(): ReactElement {
                 {message.citations.map((c, ci) => (
                   <CitationCard key={ci} citation={c} />
                 ))}
+              </div>
+            )}
+            {message.cards && message.cards.length > 0 && (
+              <div className="ml-8 flex w-full flex-col gap-2">
+                {message.cards.map((card, idx) =>
+                  card.kind === "product" ? (
+                    <ProductCard key={idx} card={card} />
+                  ) : (
+                    <SupplierCard key={idx} card={card} />
+                  ),
+                )}
               </div>
             )}
             {message.error && lastUserMessage.current !== "" && (

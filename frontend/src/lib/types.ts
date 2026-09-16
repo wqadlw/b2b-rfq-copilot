@@ -27,6 +27,7 @@ export type ChatEventName =
   | "retrieval"
   | "answer_delta"
   | "citation"
+  | "card"
   | "inquiry_confirm"
   | "inquiry_created"
   | "handoff"
@@ -52,6 +53,29 @@ export interface ChatEventData {
   qrcode_url?: string;
   guidance?: string;
   contact_name?: string;
+  kind?: string;
+  name?: string;
+  supplier?: string;
+  price?: string;
+  url?: string;
+  specs?: Record<string, string>;
+  region?: string | null;
+  certs?: string[];
+  main_products?: string[];
+  description?: string;
+}
+
+export interface EntityCardData {
+  kind: "product" | "supplier";
+  name: string;
+  supplier?: string;
+  price?: string;
+  url?: string;
+  specs?: Record<string, string>;
+  region?: string | null;
+  certs?: string[];
+  main_products?: string[];
+  description?: string;
 }
 
 export interface Citation {
@@ -72,6 +96,7 @@ export interface ChatMessage {
   statusLine?: string;
   inquiryCreated?: boolean;
   citations?: Citation[];
+  cards?: EntityCardData[];
   error?: boolean;
   wechatGuidance?: string;
   wechatQr?: WechatQr;

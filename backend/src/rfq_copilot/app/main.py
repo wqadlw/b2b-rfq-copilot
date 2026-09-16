@@ -13,8 +13,10 @@ from langgraph.types import Command
 
 from rfq_copilot.app.guest_paths import (
     detect_guest_query,
+    detect_supplier_query,
     guest_knowledge_answer,
     guest_search_answer,
+    guest_supplier_answer,
     looks_like_knowledge_query,
 )
 from rfq_copilot.app.limiter import DailyTokenBudget, SlidingWindowLimiter
@@ -131,6 +133,14 @@ def create_app() -> FastAPI:
                 rtg.store.append_message(body.session_id, "user", body.message)
                 rtg.store.append_message(body.session_id, "assistant", faq)
                 return await _guest_stream(faq, [])
+
+            # G3: 供应商白名单（0 token 公开档案：列表/详情，含 card 结构化事件）
+            supplier_mode = detect_supplier_query(body.message, rtg.deps.suppliers)
+            if supplier_mode and rtg.deps.suppliers is not None:
+                rtg.store.append_message(body.session_id, "user", body.message)
+                sup_result = await guest_supplier_answer(supplier_mode, rtg.deps.suppliers)
+                rtg.store.append_message(body.session_id, "assistant", sup_result["answer"])
+                return await _guest_stream(sup_result["answer"], sup_result["events"])
 
             # G2 优先：知识/对比类问题先走引用（"X和Y有什么区别"即使含产品词也是知识问答）
             if looks_like_knowledge_query(body.message) and rtg.deps.rag is not None:
