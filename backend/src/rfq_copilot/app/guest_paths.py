@@ -265,7 +265,14 @@ async def guest_search_answer(query: str, catalog: ProductCatalogPort | None, ma
             "finish": "answered",
         }
     # 回答形式与 graph 产品流对齐：数据交给卡片（最多 10 张，前端分页），文本只做简短引导
-    shown = list(result.items[:10])
+    seen_names: set[str] = set()
+    deduped: list[Any] = []
+    for item in result.items:
+        if item.name in seen_names:
+            continue
+        seen_names.add(item.name)
+        deduped.append(item)
+    shown = deduped[:10]
     for item in shown:
         price = item.price_display.text if item.price_display.mode == "shown" else "请联系供应商询价"
         events.append(("citation", {"title": item.name, "url": item.url, "trust": "merchant"}))

@@ -342,7 +342,8 @@ export function ChatWidget(): ReactElement {
               onCopy={handleCopy}
               onFeedback={(kind) => handleFeedback(String(index), kind)}
             />
-            {message.citations && message.citations.length > 0 && (
+            {/* 卡片已承载来源（名称+链接），引用 chips 仅在无卡片的消息展示（知识问答等） */}
+            {message.citations && message.citations.length > 0 && !message.cards?.length && (
               <div className="ml-8 flex flex-wrap gap-1">
                 {message.citations.map((c, ci) => (
                   <CitationCard key={ci} citation={c} />

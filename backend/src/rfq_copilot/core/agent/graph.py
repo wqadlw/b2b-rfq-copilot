@@ -327,7 +327,15 @@ def _respond_node(deps: GraphDeps) -> Any:
             events.append(("tool_call", {"tool": "search_products", "status": "done"}))
             # 回答形式（ChatGPT/Perplexity 卡片模式）：数据交给卡片，文本只做简短引导，
             # 不再逐条复读卡片内容（此前名称/供应商/参数/URL 全部重复一遍，可读性差）。
-            shown = result.items[:MAX_SEARCH_ITEMS]
+            # 同名去重：站点数据存在同名多 listing（如"2BE系列"×4），展示层只留首个
+            seen_names: set[str] = set()
+            deduped: list[Any] = []
+            for item in result.items:
+                if item.name in seen_names:
+                    continue
+                seen_names.add(item.name)
+                deduped.append(item)
+            shown = deduped[:MAX_SEARCH_ITEMS]
             for item in shown:
                 events.append(("citation", {"title": item.name, "url": item.url, "trust": "merchant"}))
             cards, _shown_count = _product_cards_payload(shown, whitelist)

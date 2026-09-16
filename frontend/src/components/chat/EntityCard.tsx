@@ -36,21 +36,21 @@ export function ProductCard({
   onInquiry?: (card: EntityCardData) => void;
 }): ReactElement {
   const specs = Object.entries(card.specs ?? {}).slice(0, 3);
+  const specLine = specs.map(([k, v]) => `${k} ${v}`).join("  ·  ");
   const isQuotable = !!card.price && !card.price.includes("联系") && !card.price.includes("询价");
   const badge = card.category?.slice(0, 1) || card.name.slice(0, 1);
   return (
-    <div className="rfq-fade-in w-full max-w-[92%] self-start overflow-hidden rounded-xl border border-line bg-surface transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
-      <div className="flex gap-3 p-3">
-        {/* 品类角标占位图（M5：站点 API 暴露产品图后替换为真实图） */}
+    <div className="rfq-fade-in w-full max-w-[92%] self-start rounded-xl border border-line bg-surface transition-all hover:-translate-y-px hover:border-primary/30 hover:shadow-sm">
+      <div className="flex gap-2.5 p-2.5">
         <span
           aria-hidden
-          className="flex h-14 w-14 shrink-0 select-none items-center justify-center rounded-lg bg-gradient-to-br from-primary-light via-surface to-background text-lg font-bold text-primary/70 ring-1 ring-inset ring-primary/10"
+          className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded-lg bg-gradient-to-br from-primary-light via-surface to-background text-base font-bold text-primary/70 ring-1 ring-inset ring-primary/10"
         >
           {badge}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-sm font-semibold leading-snug text-ink">{card.name}</p>
-          <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-ink-muted">
+          <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-ink">{card.name}</p>
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-ink-muted">
             <span className="truncate">{card.supplier ?? "平台供应商"}</span>
             {card.brand && (
               <>
@@ -60,12 +60,12 @@ export function ProductCard({
                 </span>
               </>
             )}
-          </div>
+          </p>
+          {specLine && <p className="mono mt-1 truncate text-[11px] text-ink-secondary" title={specLine}>{specLine}</p>}
         </div>
-        {/* 价格层：可报价大数字 / 询价徽章 */}
         <div className="shrink-0 self-center text-right">
           {isQuotable ? (
-            <p className="text-base font-bold tabular-nums leading-5 text-primary">{card.price}</p>
+            <p className="text-sm font-bold tabular-nums text-primary">{card.price}</p>
           ) : (
             <span className="inline-block rounded bg-background px-1.5 py-0.5 text-[11px] font-medium text-ink-secondary ring-1 ring-line">
               可询价
@@ -73,41 +73,29 @@ export function ProductCard({
           )}
         </div>
       </div>
-      {specs.length > 0 && (
-        <div className="grid grid-cols-3 gap-2 px-3 pb-3">
-          {specs.map(([k, v]) => (
-            <div key={k} className="rounded-lg bg-background px-2 py-1.5 ring-1 ring-line/70">
-              <p className="truncate text-[10px] leading-3 text-ink-muted" title={k}>
-                {k}
-              </p>
-              <p className="mono mt-1 truncate text-[12px] font-semibold text-ink" title={v}>
-                {v}
-              </p>
-            </div>
-          ))}
+      <div className="flex items-center justify-between border-t border-line/70 px-2.5 py-1.5">
+        <span className="truncate text-[10px] text-ink-muted">{card.category ?? ""}</span>
+        <div className="flex shrink-0 items-center gap-1">
+          {card.url && (
+            <a
+              href={card.url}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded px-1.5 py-0.5 text-[11px] text-ink-secondary transition-colors hover:text-primary"
+            >
+              详情
+            </a>
+          )}
+          {onInquiry && (
+            <button
+              type="button"
+              onClick={() => onInquiry(card)}
+              className="rounded-md bg-primary px-2 py-0.5 text-[11px] font-medium text-white transition-all hover:bg-primary-hover active:scale-95"
+            >
+              询盘
+            </button>
+          )}
         </div>
-      )}
-      <div className="flex items-center justify-end gap-1.5 border-t border-line bg-background/60 px-3 py-2">
-        {card.url && (
-          <a
-            href={card.url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-0.5 rounded-md px-2 py-1 text-[11px] font-medium text-ink-secondary transition-colors hover:text-primary"
-          >
-            查看详情
-            <ArrowUpRight className="h-3 w-3" />
-          </a>
-        )}
-        {onInquiry && (
-          <button
-            type="button"
-            onClick={() => onInquiry(card)}
-            className="rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-white shadow-sm transition-all hover:bg-primary-hover active:scale-95"
-          >
-            发起询盘
-          </button>
-        )}
       </div>
     </div>
   );
