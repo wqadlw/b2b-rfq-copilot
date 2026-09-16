@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
 from rfq_copilot.app.guest_paths import (
+    detect_guest_inquiry_intent,
     detect_guest_query,
     detect_supplier_query,
     guest_knowledge_answer,
@@ -110,7 +111,13 @@ def create_app() -> FastAPI:
         # ---- Tiered access (guest gate): guests get 0-token paths only (FAQ/deterministic
         # shortcuts); LLM-requiring turns require login (user_ref). Inquiry creation is the
         # conversion goal — guided, not blocked: guests are told to log in first.
-        if get_settings().guest_tier_enabled and not body.user_ref and body.message.strip() and not body.action:
+        if (
+            get_settings().guest_tier_enabled
+            and not body.user_ref
+            and body.message.strip()
+            and not body.action
+            and not detect_guest_inquiry_intent(body.message)
+        ):
             rtg = get_runtime()
             faq = rtg.deps.faq_matcher.match(body.message) if rtg.deps.faq_matcher else None
 
@@ -143,7 +150,12 @@ def create_app() -> FastAPI:
                 return await _guest_stream(sup_result["answer"], sup_result["events"])
 
             # G2 优先：知识/对比类问题先走引用（"X和Y有什么区别"即使含产品词也是知识问答）
-            if looks_like_knowledge_query(body.message) and rtg.deps.rag is not None:
+            # 询盘意图消息跳过 G1/G2 捷径——直达 graph inquiry_flow（确认卡 human-in-the-loop）
+            if (
+                looks_like_knowledge_query(body.message)
+                and rtg.deps.rag is not None
+                and not detect_guest_inquiry_intent(body.message)
+            ):
                 rtg.store.append_message(body.session_id, "user", body.message)
                 knowledge_result = await guest_knowledge_answer(body.message, rtg.deps.rag, rtg.manifest)
                 if knowledge_result is not None:
@@ -151,7 +163,7 @@ def create_app() -> FastAPI:
                     return await _guest_stream(knowledge_result["answer"], knowledge_result["events"])
 
             # G1: explicit product word / demo id -> direct catalog search (0 token)
-            guest_query = detect_guest_query(body.message)
+            guest_query = "" if detect_guest_inquiry_intent(body.message) else detect_guest_query(body.message)
             if guest_query:
                 rtg.store.append_message(body.session_id, "user", body.message)
                 result = await guest_search_answer(guest_query, rtg.deps.catalog, rtg.manifest)

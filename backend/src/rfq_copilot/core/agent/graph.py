@@ -678,6 +678,21 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
                 "human_reason": None,
                 "refusal_reason": reason,
             }
+    # 询盘意图确定性路由：0 LLM token 直达 inquiry_flow（确认卡 human-in-the-loop）
+    if message.strip() and (
+        "询盘" in message or "询价" in message or "要买" in message or "求购" in message
+    ):
+        return {
+            "intent": "inquiry_flow",
+            "confidence": 0.99,
+            "entities": {},
+            "missing_fields": [],
+            "route": "inquiry_flow",
+            "needs_clarification": False,
+            "needs_human": False,
+            "human_reason": None,
+            "refusal_reason": None,
+        }
     if message.strip() in {"", "嗯", "好的"} and state.get("action") is None:
         return {
             "intent": "unknown",

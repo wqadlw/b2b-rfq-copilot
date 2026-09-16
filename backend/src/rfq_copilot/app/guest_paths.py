@@ -34,6 +34,12 @@ def detect_guest_query(message: str) -> str:
 SUPPLIER_LIST_RE = re.compile(r"供应商|厂家|厂商|服务商")
 
 
+def detect_guest_inquiry_intent(message: str) -> bool:
+    """游客询盘意图白名单：明确要求发起询盘（创建流程走 0-token 工具链+确认卡）。"""
+    text = message.strip()
+    return bool(text) and ("询盘" in text or "询价" in text or "要买" in text or "求购" in text)
+
+
 def detect_supplier_query(message: str, suppliers: Any) -> str:
     """G3 命中判定：点名公司（前6字）→ 详情；供应商类词 → 列表。返回 supplier_id | "list" | ""。
 
