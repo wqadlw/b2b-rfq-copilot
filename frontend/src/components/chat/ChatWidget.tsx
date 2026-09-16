@@ -13,7 +13,7 @@ import {
 import { AlertCircle, CheckCircle2, Loader2, Pencil, SendHorizonal, Sparkles, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
-import { ProductCard, SupplierCard, type EntityCardData } from "./EntityCard";
+import { ProductCard, SolutionCard, SupplierCard, type EntityCardData } from "./EntityCard";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
@@ -212,7 +212,7 @@ export function ChatWidget(): ReactElement {
               const last = prev[prev.length - 1];
               if (last === undefined) return prev;
               const card: EntityCardData = {
-                kind: data.kind as "product" | "supplier",
+                kind: data.kind as "product" | "supplier" | "solution",
                 name: String(data.name ?? ""),
                 supplier: data.supplier !== undefined ? String(data.supplier) : undefined,
                 price: data.price !== undefined ? String(data.price) : undefined,
@@ -550,6 +550,8 @@ function CardStack({
       {visible.map((card, idx) =>
         card.kind === "product" ? (
           <ProductCard key={card.url || idx} card={card} onInquiry={onInquiry} />
+        ) : card.kind === "solution" ? (
+          <SolutionCard key={card.url || idx} card={card} />
         ) : (
           <SupplierCard key={card.url || idx} card={card} />
         ),

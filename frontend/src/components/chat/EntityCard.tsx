@@ -7,7 +7,7 @@ import { ArrowUpRight, BadgeCheck, Building2, MapPin } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 export interface EntityCardData {
-  kind: "product" | "supplier";
+  kind: "product" | "supplier" | "solution";
   name: string;
   supplier?: string;
   brand?: string | null;
@@ -19,6 +19,13 @@ export interface EntityCardData {
   certs?: string[];
   main_products?: string[];
   description?: string;
+  title?: string;
+  industry?: string;
+  pain_points?: { title: string; desc: string }[];
+  topology?: string | null;
+  budget?: string | null;
+  suppliers?: string[];
+  subtitle?: string | null;
 }
 
 function certIcon(c: string): ReactElement {
@@ -96,6 +103,59 @@ export function ProductCard({
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** SolutionCard — 行业解决方案卡（痛点 + 拓扑 + 关联供应商 + 深链）。 */
+export function SolutionCard({ card }: { card: EntityCardData }): ReactElement {
+  const pains = (card.pain_points ?? []).slice(0, 3);
+  return (
+    <div className="rfq-fade-in w-full max-w-[92%] self-start overflow-hidden rounded-xl border border-primary/25 bg-surface transition-all hover:-translate-y-px hover:shadow-sm">
+      <div className="flex items-start gap-2.5 bg-primary-light/50 p-2.5">
+        <span className="rounded bg-primary px-1.5 py-0.5 text-[10px] font-medium text-white">
+          {card.industry ?? "行业方案"}
+        </span>
+        <p className="min-w-0 flex-1 text-[13px] font-semibold leading-snug text-ink">
+          {card.title ?? "行业解决方案"}
+        </p>
+      </div>
+      {card.subtitle && (
+        <p className="px-2.5 pt-2 text-[11px] leading-relaxed text-ink-secondary">{card.subtitle}</p>
+      )}
+      {pains.length > 0 && (
+        <ul className="space-y-1 px-2.5 py-2">
+          {pains.map((p, idx) => (
+            <li key={idx} className="flex gap-1.5 text-[11px] leading-snug text-ink-secondary">
+              <span className="mt-px shrink-0 font-semibold text-warning">{p.title}</span>
+              <span className="min-w-0 flex-1 line-clamp-1 text-ink-muted" title={p.desc}>
+                {p.desc}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {card.topology && (
+        <p className="mono mx-2.5 mb-2 rounded-lg bg-background px-2 py-1.5 text-[10.5px] leading-relaxed text-ink-secondary ring-1 ring-line/70">
+          {card.topology}
+        </p>
+      )}
+      <div className="flex items-center justify-between border-t border-line/70 bg-background/60 px-2.5 py-1.5">
+        <span className="truncate text-[10px] text-ink-muted">
+          {(card.suppliers ?? []).length > 0 ? `关联供应商：${card.suppliers?.slice(0, 2).join("、")}` : "平台认证供应商可承接"}
+        </span>
+        {card.url && (
+          <a
+            href={card.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-primary px-2 py-0.5 text-[11px] font-medium text-white transition-all hover:bg-primary-hover"
+          >
+            查看方案
+            <ArrowUpRight className="h-3 w-3" />
+          </a>
+        )}
       </div>
     </div>
   );

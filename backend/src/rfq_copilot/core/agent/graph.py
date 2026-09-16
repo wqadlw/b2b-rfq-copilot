@@ -16,6 +16,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
+from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import detect_solution_query
 from rfq_copilot.core.agent.llm import LLMClient
 from rfq_copilot.core.agent.routing_guards import apply_routing_guards, select_search_keyword
 from rfq_copilot.core.manifest import Manifest
@@ -71,6 +72,7 @@ VALID_ROUTES = frozenset(
         "knowledge_flow",
         "inquiry_flow",
         "handoff_flow",
+        "solution_flow",
         "clarify",
         "refuse_fabrication",
     }
@@ -145,6 +147,7 @@ class GraphDeps:
     rag: RAGPipeline | None = None
     inquiry_sink: InquirySinkPort | None = None
     lead_distribution: LeadDistributionPort | None = None
+    solutions: Any | None = None  # 行业方案目录（ZzkSolutionDirectory；离线知识资产）
     poisoned_ids: frozenset[str] = field(default_factory=frozenset)
 
     def tool_guard(self, name: str) -> None:
@@ -317,6 +320,38 @@ def _respond_node(deps: GraphDeps) -> Any:
                         )
                     )
                 answer = "\n".join(lines)
+        elif route == "solution_flow" and deps.solutions is not None:
+            tool_calls.append("get_solution")
+            events.append(("tool_call", {"tool": "get_solution", "status": "running"}))
+            entities = (state.get("understanding") or {}).get("entities") or {}
+            industry = entities.get("industry") or detect_solution_query(message)
+            solution = deps.solutions.by_industry(industry) if industry else None
+            events.append(("tool_call", {"tool": "get_solution", "status": "done"}))
+            if solution is None:
+                answer = "该行业暂无已发布方案。您可以先看产品，或直接提交询盘让供应商出方案。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            for supplier in solution.suppliers[:3]:
+                events.append(("citation", {"title": supplier, "trust": "merchant"}))
+            events.append(
+                (
+                    "card",
+                    {
+                        "kind": "solution",
+                        "title": solution.name,
+                        "industry": solution.industry_name,
+                        "subtitle": solution.subtitle,
+                        "pain_points": solution.pain_points[:3],
+                        "topology": solution.topology,
+                        "budget": solution.budget_text,
+                        "suppliers": solution.suppliers[:3],
+                        "url": solution.url,
+                    },
+                )
+            )
+            answer = (
+                f"「{solution.industry_name}」行业已有一套成熟方案：{solution.name}。"
+                "卡片内含痛点分析与设备拓扑，点击可查看完整方案。"
+            )
         elif route in {"product_flow", "selection_flow"} and "search_products" in tools:
             events.append(("tool_call", {"tool": "search_products", "status": "running"}))
             tool_calls.append("search_products")

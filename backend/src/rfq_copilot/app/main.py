@@ -14,6 +14,7 @@ from langgraph.types import Command
 from rfq_copilot.app.guest_paths import (
     detect_guest_inquiry_intent,
     detect_guest_query,
+    detect_solution_query,
     detect_supplier_query,
     guest_knowledge_answer,
     guest_search_answer,
@@ -152,6 +153,35 @@ def create_app() -> FastAPI:
                 rtg.store.append_message(body.session_id, "user", body.message)
                 rtg.store.append_message(body.session_id, "assistant", faq)
                 return await _guest_stream(faq, [])
+
+            # G4: 行业方案捷径（0 token 公开知识：痛点/拓扑/关联供应商，含 solution 卡）
+            solution_industry = detect_solution_query(body.message)
+            if solution_industry and rtg.deps.solutions is not None:
+                rtg.store.append_message(body.session_id, "user", body.message)
+                solution = rtg.deps.solutions.by_industry(solution_industry)
+                if solution is not None:
+                    sol_events: list[tuple[str, dict[str, Any]]] = [
+                        (
+                            "card",
+                            {
+                                "kind": "solution",
+                                "title": solution.name,
+                                "industry": solution.industry_name,
+                                "subtitle": solution.subtitle,
+                                "pain_points": solution.pain_points[:3],
+                                "topology": solution.topology,
+                                "budget": solution.budget_text,
+                                "suppliers": solution.suppliers[:3],
+                                "url": solution.url,
+                            },
+                        )
+                    ]
+                    sol_answer = (
+                        f"「{solution.industry_name}」行业已有一套成熟方案：{solution.name}。"
+                        "卡片内含痛点分析与设备拓扑，点击可查看完整方案；登录后可让 AI 按您的产量匹配机型。"
+                    )
+                    rtg.store.append_message(body.session_id, "assistant", sol_answer)
+                    return await _guest_stream(sol_answer, sol_events)
 
             # G3: 供应商白名单（0 token 公开档案：列表/详情，含 card 结构化事件）
             supplier_mode = detect_supplier_query(body.message, rtg.deps.suppliers)
