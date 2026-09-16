@@ -301,6 +301,29 @@ def _respond_node(deps: GraphDeps) -> Any:
                 logger.warning("citation.invalid", invalid=invalid)  # 流式后校验：违规引用记 trace
             answer += "\n如需进一步确认，欢迎提交询盘。"
         elif route == "supplier_flow" and "get_suppliers" in tools and deps.suppliers is not None:
+            # 详情分支：问句点名公司名（前 6 字匹配）→ get_detail 档案卡
+            _detail = None
+            for _s in getattr(deps.suppliers, "_suppliers", []) or []:
+                if _s.name[:6] and _s.name[:6] in message:
+                    _detail = await deps.suppliers.get_detail(_s.id)
+                    break
+            if _detail is not None:
+                tool_calls.append("get_suppliers")
+                events.append(("tool_call", {"tool": "get_suppliers", "status": "running"}))
+                events.append(("tool_call", {"tool": "get_suppliers", "status": "done"}))
+                events.append(("citation", {"title": _detail.name, "url": _detail.url, "trust": "merchant"}))
+                intro = _detail.description or "该公司档案完善中。"
+                certs = "、".join(_detail.certifications) if _detail.certifications else "认证信息完善中"
+                region = _detail.region or "地区未标注"
+                cats = "、".join(_detail.main_products[:4]) if _detail.main_products else "真空设备"
+                answer = (
+                    f"{_detail.name}（{region}｜{certs}）\n\n"
+                    f"公司简介：{intro}\n\n"
+                    f"主营：{cats}\n\n"
+                    "如需询价或了解更多，可提交询盘，供应商会主动与您联系。"
+                )
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            # 未点名公司 → 走列表
             # 供应商智能推荐：评分驱动筛选与匹配原因；呈现并列陈述（port-spec §3.2 中立性）
             tool_calls.append("get_suppliers")
             events.append(("tool_call", {"tool": "get_suppliers", "status": "running"}))

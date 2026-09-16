@@ -35,6 +35,7 @@ class ZzkSupplierDirectory(SupplierDirectoryPort):
 
     def __init__(self, knowledge_data_dir: str | None = None) -> None:
         """与 ZzkProductCatalog 保持一致的签名：接收 knowledge_data_dir（回退数据源）。"""
+        self._intros_by_id: dict[str, str] = {}
         self._suppliers: list[SupplierSummary] = []
         self._parse(SEEDER_PATH)
         if not self._suppliers and knowledge_data_dir:
@@ -77,6 +78,7 @@ class ZzkSupplierDirectory(SupplierDirectoryPort):
             name = _field(body, "company_name")
             if not (slug and name):
                 continue
+            self._intros_by_id[f"zzk-supplier-{slug}"] = _field(body, "intro") or ""
             self._suppliers.append(
                 SupplierSummary(
                     id=f"zzk-supplier-{slug}",
@@ -134,5 +136,13 @@ class ZzkSupplierDirectory(SupplierDirectoryPort):
             hits = list(self._suppliers)
         return SupplierSearchResult(items=hits[: query.page_size], total=len(hits))
 
-    async def get_detail(self, supplier_id: str) -> None:
-        return None
+    async def get_detail(self, supplier_id: str):
+        from rfq_copilot.ports.supplier_directory import SupplierDetail
+
+        summary = next((s for s in self._suppliers if s.id == supplier_id), None)
+        if summary is None:
+            return None
+        return SupplierDetail(
+            **summary.model_dump(),
+            description=self._intros_by_id.get(supplier_id, ""),
+        )
