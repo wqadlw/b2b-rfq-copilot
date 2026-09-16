@@ -7,7 +7,11 @@ import httpx
 import pytest
 import respx
 
-from rfq_copilot.adapters.vacuum_b2b_sample.adapter import build_demo_ports, build_vacuum_sample_ports
+from rfq_copilot.adapters.vacuum_b2b_sample.adapter import (
+    _fallback_terms,
+    build_demo_ports,
+    build_vacuum_sample_ports,
+)
 from rfq_copilot.app.runtime import build_runtime
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.ports.errors import (
@@ -235,3 +239,96 @@ def test_runtime_can_select_vacuum_sample_adapter(monkeypatch: pytest.MonkeyPatc
     assert runtime.deps.inquiry_sink is not None
     assert runtime.deps.catalog is not None
     get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# 路线 A：零结果回退（站点内部检索为整串 LIKE，自然复合词零结果）
+# ---------------------------------------------------------------------------
+
+
+def _item(pid: int, name: str) -> dict:
+    return {
+        "id": pid,
+        "name": name,
+        "category_name": "真空泵",
+        "supplier_id": 5,
+        "supplier_name": "示例供应商",
+        "specs": {},
+        "price_display": {"mode": "contact", "text": ""},
+        "url": f"/products/{pid}",
+    }
+
+
+def test_fallback_terms_for_cjk_compound() -> None:
+    """前缀限定词优先，后缀设备大类次之，最多 3 个候选。"""
+    assert _fallback_terms("无油真空泵") == ["无油", "真空泵", "无油真"]
+    assert _fallback_terms("螺杆真空泵") == ["螺杆", "真空泵", "螺杆真"]
+    assert _fallback_terms(" 真空泵 ") == ["真空"]  # 3 字词回退到 2 字前缀（扩召回）
+    assert _fallback_terms("泵") == []  # 过短
+    assert _fallback_terms("") == []
+    assert _fallback_terms("无油 真空泵") == ["无油", "真空泵"]  # 分隔符切分
+    assert _fallback_terms("2XZ") == []  # 非纯中文不拆
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_primary_zero_triggers_split_fallback() -> None:
+    _, catalog = _ports()
+    calls: list[str] = []
+    table = {
+        "无油真空泵": {"items": [], "total": 0},
+        "无油": {"items": [_item(1, "无油旋片真空泵"), _item(2, "无油压缩机")], "total": 2},
+        "真空泵": {"items": [_item(2, "无油压缩机"), _item(3, "螺杆真空泵")], "total": 2},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        kw = request.url.params.get("keyword")
+        calls.append(kw)
+        return httpx.Response(200, json=table.get(kw, {"items": [], "total": 0}))
+
+    respx.get(f"{BASE}/internal-api/v1/products/search").mock(side_effect=handler)
+    result = await catalog.search(ProductSearchQuery(keyword="无油真空泵", page_size=10))
+
+    assert calls == ["无油真空泵", "无油", "真空泵", "无油真"]
+    assert [item.id for item in result.items] == ["1", "2", "3"]  # 去重且保持候选顺序
+    assert result.total == 3
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fallback_slices_to_page_size() -> None:
+    _, catalog = _ports()
+    table = {
+        "无油真空泵": {"items": [], "total": 0},
+        "无油": {"items": [_item(1, "a"), _item(2, "b")], "total": 2},
+        "真空泵": {"items": [_item(3, "c")], "total": 1},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=table.get(request.url.params.get("keyword"), {"items": [], "total": 0}))
+
+    respx.get(f"{BASE}/internal-api/v1/products/search").mock(side_effect=handler)
+    result = await catalog.search(ProductSearchQuery(keyword="无油真空泵", page=1, page_size=1))
+    assert len(result.items) == 1 and result.total == 3  # total 反映合并全集
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_primary_hits_disable_fallback() -> None:
+    _, catalog = _ports()
+    route = respx.get(f"{BASE}/internal-api/v1/products/search").respond(
+        200, json={"items": [_item(1, "无油真空泵")], "total": 1}
+    )
+    result = await catalog.search(ProductSearchQuery(keyword="无油真空泵"))
+    assert result.total == 1
+    assert route.call_count == 1  # 命中即不触发回退（成本控制）
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fallback_skipped_on_page_two() -> None:
+    _, catalog = _ports()
+    route = respx.get(f"{BASE}/internal-api/v1/products/search").respond(200, json={"items": [], "total": 0})
+    result = await catalog.search(ProductSearchQuery(keyword="无油真空泵", page=2))
+    assert result.total == 0
+    assert route.call_count == 1  # page>1 不触发，避免分页语义不一致

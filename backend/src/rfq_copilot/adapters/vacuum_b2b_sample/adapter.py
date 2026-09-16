@@ -6,6 +6,7 @@ nothing here contains real domains, tokens or private field mappings (repo-polic
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -27,6 +28,36 @@ from rfq_copilot.ports.supplier_directory import (
     SupplierSearchQuery,
     SupplierSearchResult,
 )
+
+FALLBACK_TERM_MIN_LEN = 2
+FALLBACK_MAX_QUERIES = 3
+
+
+def _fallback_terms(keyword: str) -> list[str]:
+    """零结果回退的候选子查询（站点检索为整串 LIKE，自然复合词会零结果）。
+
+    纯中文复合词按"前缀 2 字 → 后缀 3 字 → 前缀 3 字"排序：
+    前缀通常是限定词（"无油…"里的无油），后缀通常是设备大类（"…真空泵"），
+    按此顺序合并后，首页结果由更具体的限定词主导。
+    含空白/标点的查询先按分隔符切分。最多 3 个候选，避免放大上游调用量。
+    """
+    kw = keyword.strip()
+    candidates: list[str] = []
+    if not kw:
+        return []
+    for part in re.split(r"[\s,\uff0c\u3001;\uff1b/\uff0f]+", kw):
+        if part and part != kw:
+            candidates.append(part)
+    if re.fullmatch(r"[\u4e00-\u9fff]+", kw) and len(kw) > FALLBACK_TERM_MIN_LEN:
+        candidates.extend([kw[:2], kw[-3:], kw[:3]])
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for term in candidates:
+        if len(term) >= FALLBACK_TERM_MIN_LEN and term not in seen and term != kw:
+            seen.add(term)
+            out.append(term)
+    return out[:FALLBACK_MAX_QUERIES]
 
 
 def _stringify_ids(value: Any) -> Any:
@@ -56,11 +87,35 @@ class VacuumSampleProductCatalog(ProductCatalogPort):
         self._client = client
 
     async def search(self, query: ProductSearchQuery) -> ProductSearchResult:
+        """站点检索（整串 LIKE）+ 零结果回退（拆词重查合并）。
+
+        站点内部 API 只做 `name LIKE %kw% OR model LIKE %kw%`：自然复合词
+        （"无油真空泵"）因名字里没有连续整串而零结果，而"无油"有 14 条。
+        回退仅在**首页零结果**时触发：按候选子查询依次重查并合并去重，
+        本地分页（page>1 不触发，避免分页语义不一致）。
+        """
         payload = await self._client.get_json(
             "/internal-api/v1/products/search",
             params={"keyword": query.keyword, "page": query.page, "page_size": query.page_size},
         )
-        return _model(ProductSearchResult, payload)
+        primary = _model(ProductSearchResult, payload)
+        if primary.total > 0 or query.page > 1 or not query.keyword.strip():
+            return primary
+
+        terms = _fallback_terms(query.keyword)
+        if not terms:
+            return primary
+
+        merged: dict[str, Any] = {}
+        for term in terms:
+            fallback_payload = await self._client.get_json(
+                "/internal-api/v1/products/search",
+                params={"keyword": term, "page": 1, "page_size": query.page_size},
+            )
+            for item in _model(ProductSearchResult, fallback_payload).items:
+                merged.setdefault(item.id, item)
+        items = list(merged.values())[: query.page_size]
+        return ProductSearchResult(items=items, total=len(merged))
 
     async def get_detail(self, product_id: str) -> ProductDetail | None:
         payload = await self._client.get_json(f"/internal-api/v1/products/{product_id}")
