@@ -102,6 +102,8 @@ def _product_cards_payload(items: list[Any], whitelist: set[str]) -> tuple[list[
                 "kind": "product",
                 "name": item.name,
                 "supplier": item.supplier_name,
+                "brand": item.brand_name,
+                "category": item.category_name,
                 "price": price,
                 "url": item.url,
                 "specs": {key: _humanize_spec_value(value) for key, value in list(item.specs.items())[:3]},

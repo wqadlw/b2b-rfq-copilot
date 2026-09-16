@@ -23,6 +23,8 @@ class _FakeItem:
         self.id = pid
         self.name = name
         self.supplier_name = "示例供应商"
+        self.brand_name = "莱宝"
+        self.category_name = "旋片真空泵"
         self.url = f"/products/{pid}"
         self.specs = specs
         self.price_display = _FakePrice("contact", "请联系供应商询价")
@@ -35,3 +37,9 @@ def test_product_cards_payload_humanizes_specs_and_registers_shown_price() -> No
     assert count == 1
     assert cards[0]["specs"] == {"抽速": "1500 m³/h", "极限真空": "0.01 Pa"}
     assert whitelist == set()  # contact 价格不进白名单
+
+
+def test_product_cards_payload_carries_brand_and_category() -> None:
+    cards, _ = _product_cards_payload([_FakeItem("1", "旋片真空泵", {"抽速": "10 m³/h"})], set())
+    assert cards[0]["brand"] == "莱宝"
+    assert cards[0]["category"] == "旋片真空泵"

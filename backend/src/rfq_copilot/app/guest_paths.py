@@ -11,6 +11,7 @@ import inspect
 import re
 from typing import Any
 
+from rfq_copilot.core.agent.graph import _humanize_spec_value
 from rfq_copilot.core.manifest import Manifest
 from rfq_copilot.core.rag.pipeline import RAGPipeline
 from rfq_copilot.ports.product_catalog import ProductCatalogPort
@@ -239,9 +240,11 @@ async def guest_search_answer(query: str, catalog: ProductCatalogPort | None, ma
                     "kind": "product",
                     "name": detail.name,
                     "supplier": detail.supplier_name,
+                    "brand": detail.brand_name,
+                    "category": detail.category_name,
                     "price": price,
                     "url": detail.url,
-                    "specs": dict(list(detail.specs.items())[:3]),
+                    "specs": {k: _humanize_spec_value(v) for k, v in list(detail.specs.items())[:3]},
                 },
             )
         )
@@ -273,9 +276,11 @@ async def guest_search_answer(query: str, catalog: ProductCatalogPort | None, ma
                     "kind": "product",
                     "name": item.name,
                     "supplier": item.supplier_name,
+                    "brand": item.brand_name,
+                    "category": item.category_name,
                     "price": price,
                     "url": item.url,
-                    "specs": dict(list(item.specs.items())[:3]),
+                    "specs": {k: _humanize_spec_value(v) for k, v in list(item.specs.items())[:3]},
                 },
             )
         )

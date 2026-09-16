@@ -586,6 +586,9 @@ function CardStack({
           </button>
         )
       )}
+      {cards.length >= 3 && (
+        <p className="text-[10px] leading-3 text-ink-muted">参数与货期以供应商确认为准</p>
+      )}
     </div>
   );
 }
