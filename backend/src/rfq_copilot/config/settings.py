@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     rerank_api_key: str = ""
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
 
+    internal_api_base_url: str = ""  # 找真空站点内部 API 基址（如 http://127.0.0.1:8001）
     internal_api_token: str = ""
 
     # CS-tiered access: per-user daily LLM completion-token budget (cost guardrail).

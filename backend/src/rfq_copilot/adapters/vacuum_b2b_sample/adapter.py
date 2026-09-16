@@ -11,6 +11,8 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from rfq_copilot.adapters.vacuum_b2b_sample.client import VacuumInternalClient
+from rfq_copilot.config.settings import get_settings
+from rfq_copilot.ports.bundle import AdapterPorts
 from rfq_copilot.ports.errors import ConfigError, UpstreamInvalidResponseError
 from rfq_copilot.ports.inquiry_sink import InquiryDraft, InquiryResult, InquirySinkPort
 from rfq_copilot.ports.lead_distribution import DistributionResult, LeadCandidate, LeadDistributionPort
@@ -80,28 +82,49 @@ class VacuumSampleSupplierDirectory(SupplierDirectoryPort):
         raise NotImplementedError("sample adapter: supplier detail not exposed in phase 1")
 
 
+def _as_int(value: str | None) -> int | None:
+    """Site PKs are integers (validated `integer|exists`); port ids are str — coerce when numeric."""
+    return int(value) if value is not None and value.isdigit() else None
+
+
 class VacuumSampleInquirySink(InquirySinkPort):
+    r"""POST /internal-api/v1/inquiries — payload mirrors the site's validation contract.
+
+    Contract (site InternalApiController::storeInquiry):
+    - `contact` is nested and `contact.name` / `contact.phone` are required
+      (phone must match ^1[3-9]\d{9}$); flat contact_* keys are rejected.
+    - `user_ref` / `product_id` / `category_id` are nullable integers with exists rules,
+      so a non-numeric port id is omitted rather than sent to fail validation.
+    - 201 = created, 200 = idempotent replay of the same idempotency_key.
+    """
+
     def __init__(self, client: VacuumInternalClient) -> None:
         self._client = client
 
     async def create(self, draft: InquiryDraft) -> InquiryResult:
-        payload = await self._client.post_json(
-            "/internal-api/v1/inquiries",
-            {
-                "source": "ai_chat",
-                "session_id": draft.session_id,
-                "idempotency_key": draft.idempotency_key,
-                "product_id": draft.product_id,
-                "title": f"AI 询盘 {draft.session_id}",
-                "quantity": draft.quantity,
-                "params_text": "；".join(f"{k}:{v}" for k, v in draft.params.items()),
-                "contact_name": draft.contact.name,
-                "contact_phone": draft.contact.phone,
-                "message": draft.message,
-                "lead_score": draft.lead_score,
-                "ai_extract": draft.ai_extract.model_dump(),
-            },
-        )
+        contact: dict[str, Any] = {"name": draft.contact.name, "phone": draft.contact.phone}
+        if draft.contact.company:
+            contact["company"] = draft.contact.company
+        if draft.contact.email:
+            contact["email"] = draft.contact.email
+        body: dict[str, Any] = {
+            "session_id": draft.session_id,
+            "idempotency_key": draft.idempotency_key,
+            "title": f"AI询盘-{draft.session_id}",
+            "message": draft.message,
+            "lead_score": draft.lead_score,
+            "ai_extract": draft.ai_extract.model_dump(),
+            "contact": contact,
+        }
+        for site_key in ("user_ref", "product_id", "category_id"):
+            coerced = _as_int(getattr(draft, site_key))
+            if coerced is not None:
+                body[site_key] = coerced
+        if draft.quantity is not None:
+            body["quantity"] = draft.quantity
+        if draft.params:
+            body["params_text"] = "；".join(f"{k}:{v}" for k, v in draft.params.items())
+        payload = await self._client.post_json("/internal-api/v1/inquiries", body)
         return _model(InquiryResult, payload)
 
 
@@ -111,13 +134,23 @@ class VacuumSampleLeadDistribution(LeadDistributionPort):
         return DistributionResult(distributed=False, channel="site_scan", reference_id=lead.inquiry_id)
 
 
-def build_vacuum_sample_ports(base_url: str, token: str) -> dict[str, Any]:
+def build_demo_ports() -> AdapterPorts:
+    """Runtime entrypoint: configure the adapter from env-backed settings.
+
+    Requires INTERNAL_API_BASE_URL and INTERNAL_API_TOKEN (fail loudly when unset —
+    a half-configured real channel must never silently degrade to nothing).
+    """
+    settings = get_settings()
+    return build_vacuum_sample_ports(base_url=settings.internal_api_base_url, token=settings.internal_api_token)
+
+
+def build_vacuum_sample_ports(base_url: str, token: str) -> AdapterPorts:
     if not base_url or not token:
-        raise ConfigError("vacuum_b2b_sample requires VACUUM_API_BASE_URL and VACUUM_API_TOKEN")
+        raise ConfigError("vacuum_b2b_sample requires INTERNAL_API_BASE_URL and INTERNAL_API_TOKEN")
     client = VacuumInternalClient(base_url=base_url, token=token)
-    return {
-        "catalog": VacuumSampleProductCatalog(client),
-        "suppliers": VacuumSampleSupplierDirectory(client),
-        "inquiry_sink": VacuumSampleInquirySink(client),
-        "lead_distribution": VacuumSampleLeadDistribution(),
-    }
+    return AdapterPorts(
+        catalog=VacuumSampleProductCatalog(client),
+        suppliers=VacuumSampleSupplierDirectory(client),
+        inquiry_sink=VacuumSampleInquirySink(client),
+        lead_distribution=VacuumSampleLeadDistribution(),
+    )
