@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "description": "Router golden set: deterministic, 0-LLM-token regression assertions over the understanding shortcuts, refusal policies and graph answer invariants. Every case must be reproducible without network access.",
+  "cases": [
+    {
+      "id": "price-interval",
+      "message": "这台泵多少钱？给我个区间",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "price_inquiry",
+        "refusal_reason": "pricing_disabled"
+      }
+    },
+    {
+      "id": "price-plain",
+      "message": "这个价格多少",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "price_inquiry",
+        "refusal_reason": "pricing_disabled"
+      }
+    },
+    {
+      "id": "price-quote-word",
+      "message": "给我一下报价",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "price_inquiry",
+        "refusal_reason": "pricing_disabled"
+      }
+    },
+    {
+      "id": "price-yuan",
+      "message": "这台泵要 5000 元吗",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "price_inquiry",
+        "refusal_reason": "pricing_disabled"
+      }
+    },
+    {
+      "id": "discount",
+      "message": "有折扣吗？能不能优惠点",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "discount_inquiry",
+        "refusal_reason": "pricing_disabled"
+      }
+    },
+    {
+      "id": "lead-time-delivery",
+      "message": "这个多久能交货？",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "lead_time_inquiry",
+        "refusal_reason": "lead_time_disabled"
+      }
+    },
+    {
+      "id": "lead-time-cycle",
+      "message": "货期几周？",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "lead_time_inquiry",
+        "refusal_reason": "lead_time_disabled"
+      }
+    },
+    {
+      "id": "lead-time-arrive",
+      "message": "下单后能到吗",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "lead_time_inquiry",
+        "refusal_reason": "lead_time_disabled"
+      }
+    },
+    {
+      "id": "stock-available",
+      "message": "这款有货吗",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "stock_inquiry",
+        "refusal_reason": "stock_disabled"
+      }
+    },
+    {
+      "id": "stock-inventory",
+      "message": "库存还有多少",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "stock_inquiry",
+        "refusal_reason": "stock_disabled"
+      }
+    },
+    {
+      "id": "stock-in-stock",
+      "message": "有现货吗",
+      "expect": {
+        "route": "refuse_fabrication",
+        "intent": "stock_inquiry",
+        "refusal_reason": "stock_disabled"
+      }
+    },
+    {
+      "id": "inquiry-word",
+      "message": "我要询盘：嘉仕达 0523系列 无油旋片真空泵",
+      "expect": {
+        "route": "inquiry_flow",
+        "intent": "inquiry_flow"
+      }
+    },
+    {
+      "id": "inquiry-price-word",
+      "message": "询价 demo-p-001，10 台",
+      "expect": {
+        "route": "inquiry_flow",
+        "intent": "inquiry_flow"
+      }
+    },
+    {
+      "id": "inquiry-buy",
+      "message": "我要买一台无油泵",
+      "expect": {
+        "route": "inquiry_flow",
+        "intent": "inquiry_flow"
+      }
+    },
+    {
+      "id": "inquiry-wanted",
+      "message": "求购真空泵机组",
+      "expect": {
+        "route": "inquiry_flow",
+        "intent": "inquiry_flow"
+      }
+    },
+    {
+      "id": "empty",
+      "message": "",
+      "expect": {
+        "route": "clarify",
+        "intent": "unknown"
+      }
+    },
+    {
+      "id": "greeting-ok",
+      "message": "好的",
+      "expect": {
+        "route": "clarify",
+        "intent": "unknown"
+      }
+    },
+    {
+      "id": "greeting-hm",
+      "message": "嗯",
+      "expect": {
+        "route": "clarify",
+        "intent": "unknown"
+      }
+    }
+  ],
+  "answer_invariants": [
+    {
+      "id": "refusal-pricing-text",
+      "message": "这台泵多少钱？",
+      "contains": [
+        "提交询价"
+      ],
+      "absent": [
+        "￥",
+        "元"
+      ]
+    },
+    {
+      "id": "refusal-lead-time-text",
+      "message": "这个多久能交货？",
+      "contains": [
+        "货期需供应商确认"
+      ],
+      "absent": []
+    },
+    {
+      "id": "refusal-stock-text",
+      "message": "这款有货吗",
+      "contains": [
+        "库存请以供应商确认为准"
+      ],
+      "absent": []
+    }
+  ]
+}

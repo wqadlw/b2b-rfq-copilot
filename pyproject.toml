@@ -60,6 +60,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
+markers = ["eval: golden-set regression cases (deterministic, 0-LLM-token)"]
 pythonpath = ["backend/src"]
 
 [tool.importlinter]
