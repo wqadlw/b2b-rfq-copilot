@@ -530,6 +530,55 @@ def _inquiry_node(deps: GraphDeps) -> Any:
         if action != "confirm_inquiry":
             answer = "已取消，本次不提交任何信息。"
             return {"route": "inquiry_flow", "answer": answer, "events": events}
+        # 行内编辑回传：resume 可携带 draft_override（quantity/contact_name/contact_phone），白名单合并
+        override = (approval or {}).get("draft_override") or {}
+        if override:
+            _q = override.get("quantity")
+            if isinstance(_q, int) and 0 < _q <= 100000:
+                draft.quantity = _q
+            _name = override.get("contact_name")
+            if isinstance(_name, str) and _name.strip():
+                contact.name = _name.strip()[:50]
+            _phone = override.get("contact_phone")
+            if isinstance(_phone, str) and _phone.strip().isdigit() and 7 <= len(_phone.strip()) <= 20:
+                contact.phone = _phone.strip()
+            _ct = contact.model_dump()
+            provided_keys = {
+                "contact_name": bool(contact.name),
+                "contact_phone": bool(contact.phone),
+            }
+            _missing = [f for f in cfg.required_fields if not provided_keys.get(f, False)]
+            if _missing:
+                names = "、".join({"contact_name": "联系人", "contact_phone": "手机号"}.get(f, f) for f in _missing)
+                events.append(
+                    (
+                        "inquiry_confirm",
+                        {
+                            "confirm_id": key[:16],
+                            "draft": {
+                                "product_id": draft.product_id,
+                                "quantity": draft.quantity,
+                                "contact_name": contact.name,
+                                "contact_phone_masked": _mask(contact.phone),
+                            },
+                        },
+                    )
+                )
+                answer = f"修改后仍缺少必填信息：{names}，请补充后再提交。"
+                return {"route": "inquiry_flow", "answer": answer, "events": events, "needs_more_info": True}
+            draft = InquiryDraft(
+                session_id=draft.session_id,
+                user_ref=draft.user_ref,
+                product_id=draft.product_id,
+                quantity=draft.quantity,
+                params=draft.params,
+                message=draft.message,
+                contact=contact,
+                lead_score=draft.lead_score,
+                ai_extract=draft.ai_extract,
+                idempotency_key=draft.idempotency_key,
+            )
+            _ = _ct  # 旧值仅用于类型完整性，不落库
         sink = deps.inquiry_sink
         if sink is None:
             events.append(("error", {"code": "PORT_DISABLED", "message": "询盘能力未启用"}))

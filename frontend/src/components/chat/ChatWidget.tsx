@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { AlertCircle, CheckCircle2, Loader2, SendHorizonal, Sparkles, Square } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Pencil, SendHorizonal, Sparkles, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
 import { ProductCard, SupplierCard, type EntityCardData } from "./EntityCard";
@@ -37,6 +37,7 @@ const DEMO_PRODUCT_NAMES: Record<string, string> = {
 
 interface PendingConfirm {
   card: import("../../lib/inquiryReducer").InquiryCardState;
+  override?: { quantity?: number | null; contact_name?: string; contact_phone?: string };
   draft: {
     product_id?: string | number | null;
     quantity?: number | null;
@@ -144,7 +145,11 @@ export function ChatWidget(): ReactElement {
     abortRef.current?.abort();
   };
 
-  const send = async (message: string, action?: "confirm_inquiry" | "cancel_inquiry"): Promise<void> => {
+  const send = async (
+    message: string,
+    action?: "confirm_inquiry" | "cancel_inquiry",
+    draftOverride?: { quantity?: number | null; contact_name?: string; contact_phone?: string } | null,
+  ): Promise<void> => {
     if (busy || (!message && !action)) return;
     setBusy(true);
     // 自愈：会话创建失败（如引擎重启期间加载的页面）时，发送前自动重建会话
@@ -186,6 +191,7 @@ export function ChatWidget(): ReactElement {
         contact: { name: "demo 用户", phone: "13800000000" },
         quantity: 10,
         productId: null,
+        draftOverride,
         onEvent: (name, data) => {
           if (name === "status" || name === "tool_call") {
             updateLast({ statusLine: data.message ?? `正在调用 ${data.tool ?? "工具"}…` });
@@ -390,21 +396,40 @@ export function ChatWidget(): ReactElement {
               {pendingConfirm.draft.product_id !== undefined && pendingConfirm.draft.product_id !== null && (
                 <div>产品：{productName(pendingConfirm.draft.product_id)}</div>
               )}
-              {pendingConfirm.draft.quantity !== undefined && pendingConfirm.draft.quantity !== null && (
-                <div>数量：{pendingConfirm.draft.quantity}</div>
-              )}
-              {pendingConfirm.draft.contact_name !== undefined && (
-                <div>联系人：{pendingConfirm.draft.contact_name}</div>
-              )}
-              {pendingConfirm.draft.contact_phone_masked !== undefined && (
-                <div>电话：{pendingConfirm.draft.contact_phone_masked}</div>
+              {pendingConfirm.card.phase === "editing" ? (
+                <ReviewEditor
+                  quantity={pendingConfirm.override?.quantity ?? (pendingConfirm.draft.quantity as number | null)}
+                  contactName={pendingConfirm.override?.contact_name ?? pendingConfirm.draft.contact_name}
+                  onChange={(patch) =>
+                    setPendingConfirm((prev) => (prev ? { ...prev, override: { ...prev.override, ...patch } } : prev))
+                  }
+                  onSubmit={() =>
+                    void send("", "confirm_inquiry", {
+                      quantity: pendingConfirm.override?.quantity ?? null,
+                      contact_name: pendingConfirm.override?.contact_name,
+                      contact_phone: pendingConfirm.override?.contact_phone,
+                    })
+                  }
+                />
+              ) : (
+                <>
+                  {pendingConfirm.draft.quantity !== undefined && pendingConfirm.draft.quantity !== null && (
+                    <div>数量：{pendingConfirm.draft.quantity}</div>
+                  )}
+                  {pendingConfirm.draft.contact_name !== undefined && (
+                    <div>联系人：{pendingConfirm.draft.contact_name}</div>
+                  )}
+                  {pendingConfirm.draft.contact_phone_masked !== undefined && (
+                    <div>电话：{pendingConfirm.draft.contact_phone_masked}</div>
+                  )}
+                </>
               )}
             </dl>
             {pendingConfirm.card.phase === "editing" && (
               <>
                 <p className="mt-1.5 text-[11px] text-ink-muted">提交后将进入供应商报价流程，请核对以上信息。</p>
                 <div className="mt-2.5 flex gap-2">
-                  <Button size="sm" onClick={() => void send("", "confirm_inquiry")}>
+                  <Button size="sm" onClick={() => void send("", "confirm_inquiry", pendingConfirm.override ?? null)}>
                     确认提交
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => void send("", "cancel_inquiry")}>
@@ -428,7 +453,7 @@ export function ChatWidget(): ReactElement {
             )}
             {pendingConfirm.card.phase === "error" && (
               <div className="mt-2.5">
-                <Button size="sm" onClick={() => void send("", "confirm_inquiry")}>
+                <Button size="sm" onClick={() => void send("", "confirm_inquiry", pendingConfirm.override ?? null)}>
                   重试发送
                 </Button>
               </div>
@@ -530,5 +555,113 @@ function CardStack({
         </button>
       )}
     </div>
+  );
+}
+
+/** ReviewEditor — 确认卡行内编辑（Baymard review-style：label+value+铅笔，逐字段编辑）。 */
+function ReviewEditor({
+  quantity,
+  contactName,
+  onChange,
+  onSubmit,
+}: {
+  quantity: number | null | undefined;
+  contactName: string | undefined;
+  onChange: (patch: { quantity?: number; contact_name?: string }) => void;
+  onSubmit: () => void;
+}): ReactElement {
+  const [editing, setEditing] = useState<"quantity" | "contact_name" | null>(null);
+  const [draftQty, setDraftQty] = useState(String(quantity ?? ""));
+  const [draftName, setDraftName] = useState(contactName ?? "");
+
+  const commit = (): void => {
+    if (editing === "quantity") {
+      const n = Number.parseInt(draftQty, 10);
+      if (Number.isFinite(n) && n > 0) onChange({ quantity: n });
+    } else if (editing === "contact_name") {
+      if (draftName.trim()) onChange({ contact_name: draftName.trim() });
+    }
+    setEditing(null);
+  };
+
+  return (
+    <>
+      {quantity !== undefined && quantity !== null && (
+        <div className="flex items-center gap-1">
+          {editing === "quantity" ? (
+            <>
+              <input
+                autoFocus
+                value={draftQty}
+                onChange={(e) => setDraftQty(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commit();
+                  if (e.key === "Escape") setEditing(null);
+                }}
+                inputMode="numeric"
+                className="w-16 rounded border border-primary bg-surface px-1 py-0.5 text-xs text-base sm:text-xs focus:outline-none"
+              />
+              <button type="button" aria-label="保存" onClick={commit} className="text-primary hover:underline">
+                保存
+              </button>
+            </>
+          ) : (
+            <>
+              <span>数量：{quantity}</span>
+              <button
+                type="button"
+                aria-label="编辑数量"
+                onClick={() => setEditing("quantity")}
+                className="text-ink-muted hover:text-primary"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {contactName !== undefined && (
+        <div className="flex items-center gap-1">
+          {editing === "contact_name" ? (
+            <>
+              <input
+                autoFocus
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commit();
+                  if (e.key === "Escape") setEditing(null);
+                }}
+                className="w-24 rounded border border-primary bg-surface px-1 py-0.5 text-xs text-base sm:text-xs focus:outline-none"
+              />
+              <button type="button" aria-label="保存" onClick={commit} className="text-primary hover:underline">
+                保存
+              </button>
+            </>
+          ) : (
+            <>
+              <span>联系人：{contactName}</span>
+              <button
+                type="button"
+                aria-label="编辑联系人"
+                onClick={() => setEditing("contact_name")}
+                className="text-ink-muted hover:text-primary"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          commit();
+          onSubmit();
+        }}
+        className="hidden"
+        aria-hidden
+      />
+    </>
   );
 }
