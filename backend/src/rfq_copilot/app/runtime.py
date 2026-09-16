@@ -85,6 +85,11 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
     manifest = load_manifest(adapter_dir)  # V1~V7 validation (V2 via module import below)
     module = _adapter_module(adapter)  # V2: enabled ports must have an implementation package
     ports = module.build_demo_ports()
+    # ZZK 真实数据模式：产品目录切真实数据（KNOWLEDGE_DATA_DIR 非空时）
+    from rfq_copilot.adapters.zhaozhenkong_offline.zzk_catalog import ZzkProductCatalog
+
+    if get_settings().knowledge_data_dir:
+        ports.catalog = ZzkProductCatalog(get_settings().knowledge_data_dir)
     settings = get_settings()
     client = llm or OpenAICompatLLM(
         base_url=settings.llm_base_url, api_key=settings.llm_api_key, model=settings.llm_model
