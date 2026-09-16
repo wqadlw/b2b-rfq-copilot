@@ -473,8 +473,19 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
                 continue
             body_parts = []
             for key in (
-                "brief", "pain", "summary", "content", "answer", "description", "body",
-                "subtitle", "title_desc", "digest", "excerpt", "intro", "achievement",
+                "brief",
+                "pain",
+                "summary",
+                "content",
+                "answer",
+                "description",
+                "body",
+                "subtitle",
+                "title_desc",
+                "digest",
+                "excerpt",
+                "intro",
+                "achievement",
             ):
                 value = item.get(key)
                 if isinstance(value, str) and value.strip():

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     internal_api_token: str = ""
     database_url: str = "postgresql://rfq:rfq@localhost:5432/rfq"
 
+    knowledge_data_dir: str = ""
+
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

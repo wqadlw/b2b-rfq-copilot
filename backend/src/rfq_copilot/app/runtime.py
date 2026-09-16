@@ -1,6 +1,7 @@
 """Runtime assembly: manifest → ports → RAG pipeline → graph (app is the only composition root)."""
 
 import importlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from rfq_copilot.core.rag.pipeline import RAGPipeline
 from rfq_copilot.core.rag.reranker import NoopReranker
 from rfq_copilot.core.rag.store import InMemoryVectorStore
 from rfq_copilot.ports.errors import ConfigError
+from rfq_copilot.ports.knowledge_source import KnowledgeDocument
 
 ADAPTERS_DIR = Path(__file__).resolve().parent.parent / "adapters"
 POISONED_IDS = frozenset({"demo-kb-poison-001", "demo-kb-poison-002", "demo-kb-poison-003"})
@@ -64,11 +66,16 @@ def _build_rag(settings: Any, manifest: Manifest) -> RAGPipeline | None:
 
 
 async def seed_demo(runtime: Runtime) -> None:
-    """Seed the in-memory store with demo docs (skipped when already seeded)."""
+    """Seed the in-memory store（demo 文档或 ZZK 真实知识集，skipped when already seeded）."""
     rag = runtime.deps.rag
     if rag is None or rag._store.count() > 0:  # noqa: SLF001 — runtime owns its pipeline
         return
-    docs = list(demo_data.DOCS) + list(demo_data.POISON_DOCS)
+    zzk_dir = get_settings().knowledge_data_dir
+    if zzk_dir:
+        payload = json.loads((Path(zzk_dir) / "zzk_knowledge.json").read_text(encoding="utf-8"))
+        docs = [KnowledgeDocument(**d) for d in payload["documents"]]
+    else:
+        docs = list(demo_data.DOCS) + list(demo_data.POISON_DOCS)
     chunks = [chunk for doc in docs for chunk in chunk_document(doc)]
     await rag.ingest(chunks)
 
