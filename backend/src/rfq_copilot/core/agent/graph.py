@@ -199,10 +199,27 @@ def _handoff_node(deps: GraphDeps) -> Any:
         reason = u.get("human_reason") or "user_request"
         priority = "high" if reason in {"complaint", "legal"} else "normal"
         answer = "这个问题我已为您标记人工跟进，销售会尽快与您联系。"
+        events: list[tuple[str, dict[str, Any]]] = [
+            ("handoff", {"reason": reason, "priority": priority}),
+        ]
+        wechat = deps.manifest.chat.wechat
+        if wechat.qrcode_url:
+            contact = wechat.contact_name or "专属工程师"
+            answer += f"您也可以扫码添加{contact}，一对一快速响应，见下方二维码。"
+            events.append(
+                (
+                    "wechat_guidance",
+                    {
+                        "guidance": wechat.guidance_text or "扫码添加专属工程师一对一快速响应",
+                        "qrcode_url": wechat.qrcode_url,
+                        "contact_name": wechat.contact_name or "专属工程师",
+                    },
+                )
+            )
         return {
             "route": "handoff_flow",
             "answer": answer,
-            "events": [("handoff", {"reason": reason, "priority": priority})],
+            "events": events,
         }
 
     return node
@@ -464,7 +481,16 @@ def _inquiry_node(deps: GraphDeps) -> Any:
             return {"route": "inquiry_flow", "answer": "当前环境未接入询盘通道。", "events": events}
         result = await _call_tool(sink.create, draft)
         events.append(("inquiry_created", {"inquiry_id": result.inquiry_id, "state": result.state}))
-        events.append(("wechat_guidance", {"message": "询盘已创建，您可以添加供应商微信获取更快响应。"}))
+        wechat = deps.manifest.chat.wechat
+        wechat_payload: dict[str, Any] = {
+            "guidance": "询盘已创建，您可以添加供应商微信获取更快响应。",
+        }
+        if wechat.qrcode_url:
+            wechat_payload["qrcode_url"] = wechat.qrcode_url
+            wechat_payload["contact_name"] = wechat.contact_name or "专属工程师"
+            if wechat.guidance_text:
+                wechat_payload["guidance"] = wechat.guidance_text
+        events.append(("wechat_guidance", wechat_payload))
         answer = "询盘已创建成功，供应商会尽快与您联系。\n您也可以添加供应商微信获取更快响应（扫描二维码）。"
         return {"route": "inquiry_flow", "answer": answer, "events": events, "confirm_done": True}
 

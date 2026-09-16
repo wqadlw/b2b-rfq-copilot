@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
 
     internal_api_token: str = ""
+
+    # CS-tiered access: per-user daily LLM completion-token budget (cost guardrail).
+    llm_daily_token_budget: int = 20000
+    # Guest tier gate: when true, guests (no user_ref) are limited to 0-token paths and
+    # LLM turns return login_required. Demo/tests default false (open chat).
+    guest_tier_enabled: bool = False
     database_url: str = "postgresql://rfq:rfq@localhost:5432/rfq"
 
     knowledge_data_dir: str = ""

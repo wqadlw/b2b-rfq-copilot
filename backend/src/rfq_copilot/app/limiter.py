@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -45,3 +46,29 @@ class SlidingWindowLimiter:
             self._hits[key].append(now)
             self._prune(key, now, rule.window_seconds)
         return True
+
+
+class DailyTokenBudget:
+    """Per-user daily completion-token budget (in-memory, resets by UTC date)."""
+
+    def __init__(self, daily_limit: int) -> None:
+        self._limit = daily_limit
+        self._date: dict[str, str] = {}
+        self._tokens: dict[str, int] = defaultdict(int)
+
+    def remaining(self, user_ref: str) -> int:
+        if self._limit <= 0:
+            return 10**9  # disabled
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        if self._date.get(user_ref) != today:
+            return self._limit
+        return max(0, self._limit - self._tokens[user_ref])
+
+    def consume(self, user_ref: str, tokens: int) -> None:
+        if tokens <= 0:
+            return
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        if self._date.get(user_ref) != today:
+            self._date[user_ref] = today
+            self._tokens[user_ref] = 0
+        self._tokens[user_ref] += tokens

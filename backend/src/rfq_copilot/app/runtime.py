@@ -15,7 +15,7 @@ from rfq_copilot.core.agent.graph import GraphDeps, build_graph
 from rfq_copilot.core.agent.llm import LLMClient, OpenAICompatLLM
 from rfq_copilot.core.manifest import Manifest, load_manifest
 from rfq_copilot.core.memory import SessionStore
-from rfq_copilot.core.policies.faq_matcher import FaqMatcher
+from rfq_copilot.core.policies.faq_matcher import FaqMatcher, FaqRegistry
 from rfq_copilot.core.policies.faq_matcher import build_default_faq as build_faq
 from rfq_copilot.core.policies.refusal import derive_refusal_policies
 from rfq_copilot.core.prompts import PromptRegistry
@@ -38,6 +38,7 @@ class Runtime:
     graph: Any
     store: SessionStore
     metrics: "MetricsRegistry"
+    faq_registry: FaqRegistry | None = None  # CS-faq: 运营可变 FAQ 库（app 层运营件）
 
 
 def _adapter_module(adapter: str) -> Any:
@@ -114,7 +115,14 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
         poisoned_ids=POISONED_IDS,
     )
     graph = build_graph(deps, checkpointer=MemorySaver())  # demo profile; prod swaps AsyncPostgresSaver
-    return Runtime(manifest=manifest, deps=deps, graph=graph, store=store, metrics=MetricsRegistry())
+    return Runtime(
+        manifest=manifest,
+        deps=deps,
+        graph=graph,
+        store=store,
+        metrics=MetricsRegistry(),
+        faq_registry=FaqRegistry(build_faq()),
+    )
 
 
 def ui_config(runtime: Runtime) -> dict[str, Any]:
@@ -125,6 +133,11 @@ def ui_config(runtime: Runtime) -> dict[str, Any]:
         "chat": {
             "welcome_message": m.chat.welcome_message,
             "suggested_questions": m.chat.suggested_questions,
+            "wechat": {
+                "qrcode_url": m.chat.wechat.qrcode_url,
+                "contact_name": m.chat.wechat.contact_name,
+                "guidance_text": m.chat.wechat.guidance_text,
+            },
         },
         "theme": {"primary": m.chat.theme_primary},
         "capabilities": {

@@ -27,6 +27,11 @@ capabilities:
   stock:     { enabled: false }
 
 chat:
+  wechat:
+    # CS-1.5: demo placeholder — real QR belongs to the site-side private config (repo-policy)
+    qrcode_url: "/demo-assets/demo-wechat-qr.svg"
+    contact_name: "demo 工程师"
+    guidance_text: "扫码添加专属工程师，一对一快速响应"
   welcome_message: "您好，我是采购助手，可以帮您查产品、对参数、做选型，需要报价可直接为您创建询盘。"
   suggested_questions:
     - "有哪些无油泵适合实验室？"

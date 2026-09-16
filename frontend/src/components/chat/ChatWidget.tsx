@@ -46,6 +46,8 @@ interface PendingConfirm {
 export function ChatWidget(): ReactElement {
   const [config, setConfig] = useState<UiConfig | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // 分级访问演示：真实站点由宿主签发 user_ref；demo 用模拟登录按钮切换游客/登录态
+  const [userRef, setUserRef] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -73,7 +75,7 @@ export function ChatWidget(): ReactElement {
           }
         } catch { /* 解析失败走新建 */ }
       }
-      const session = await createSession(null);
+      const session = await createSession(userRef);
       setSessionId(session);
       setMessages([{ role: "assistant", content: cfg.chat.welcome_message ?? "您好，我是询盘助手。" }]);
     })();
@@ -145,7 +147,7 @@ export function ChatWidget(): ReactElement {
     let sid = sessionId;
     if (sid === null) {
       try {
-        sid = await createSession(null);
+        sid = await createSession(userRef);
         setSessionId(sid);
       } catch {
         updateLast({ content: "无法连接引擎，请确认服务已启动后重试。", statusLine: undefined });
@@ -166,6 +168,7 @@ export function ChatWidget(): ReactElement {
         sessionId: sid,
         message,
         action,
+        userRef,
         signal: controller.signal,
         contact: { name: "demo 用户", phone: "13800000000" },
         quantity: 10,
@@ -190,8 +193,18 @@ export function ChatWidget(): ReactElement {
           } else if (name === "inquiry_created") {
             setPendingConfirm(null);
             updateLast({ inquiryCreated: true });
-          } else if (name === "wechat_guidance" && data.guidance) {
-            updateLast({ wechatGuidance: data.guidance });
+          } else if (name === "wechat_guidance") {
+            updateLast({
+              wechatGuidance: data.guidance ?? undefined,
+              wechatQr:
+                data.qrcode_url !== undefined && data.qrcode_url !== ""
+                  ? { url: data.qrcode_url, contact: data.contact_name ?? "专属工程师", guidance: data.guidance }
+                  : undefined,
+            });
+          } else if (name === "login_required") {
+            updateLast({ loginRequired: true });
+          } else if (name === "token_budget_exceeded") {
+            updateLast({ loginRequired: false });
           } else if (name === "error") {
             updateLast({ error: true });
           }
@@ -324,6 +337,23 @@ export function ChatWidget(): ReactElement {
         )}
       </div>
 
+      {/* 分级访问演示条：真实站点由宿主注入登录态，demo 用按钮模拟 */}
+      <div className="flex items-center justify-between border-b border-border px-4 py-1.5 text-xs text-ink-muted">
+        <span>
+          {userRef
+            ? "已登录：完整功能可用（每日 AI 额度内）"
+            : "游客模式：常见问题免费答，深度咨询请登录"}
+        </span>
+        {userRef ? (
+          <button type="button" className="text-primary hover:underline" onClick={() => setUserRef(null)}>
+            退出登录（演示）
+          </button>
+        ) : (
+          <button type="button" className="text-primary hover:underline" onClick={() => setUserRef("demo-user")}>
+            登录 / 注册（演示）
+          </button>
+        )}
+      </div>
       {/* Input：busy 时发送钮变停止钮 */}
       <form onSubmit={onSubmit} className="border-t border-line bg-surface p-3">
         <div className="relative">

@@ -82,6 +82,19 @@
 
 ### GET /api/v1/health → `{"status":"ok","adapter":"demo","profile":"demo|prod"}`
 
+## 4.5 坐席接管（CS-1，全部需 X-Internal-Token）
+
+会话状态机：`bot_serving`（AI 服务中）→ `handoff_pending`（待人工接管，handoff 路由触发）→ `human_serving`（人工服务中）→ `closed`（已结束）。状态存于 SessionStore，随会话生命周期存在。
+
+| 端点 | 说明 |
+|---|---|
+| `GET /api/v1/agent/sessions?status=handoff_pending` | 坐席工作台会话列表（按状态过滤，最近消息优先）；非法 status → 400 INVALID_STATUS |
+| `POST /api/v1/agent/sessions/{id}/takeover` | 接管：→ `human_serving`，写入系统消息"坐席已接入"；会话不存在或已结束 → 404 |
+| `POST /api/v1/agent/sessions/{id}/reply` | 坐席回复：`{"content": "..."}`（≤2000 字符）直接落会话消息流（role=agent），**不进 LLM**；会话不在 `human_serving` → 409 NOT_HUMAN_SERVING；坏 JSON → 400 INVALID_JSON；空内容 → 400 MISSING_CONTENT |
+| `POST /api/v1/agent/sessions/{id}/close` | 结束：→ `closed`，写入系统消息"本次服务已结束"；不存在 → 404 |
+
+**human_serving 绕过语义**：会话处于 `human_serving` 时，用户经 `POST /chat/stream` 发送的消息**绕过 LLM 图（0 token）**：用户消息照常落库，SSE 返回 `status`（人工服务中）+ 最后一条坐席回复的 `answer_delta` + `done(finish_reason="human_serving")`。坐席消息经 reply 落库后，用户下次轮询/发消息即见。
+
 （能力徽章数据不单设 `/capabilities` 端点，统一由 `GET /api/v1/ui-config` 的 `capabilities` 键承载——manifest 是唯一事实源。）
 
 ## 5. 限流
