@@ -86,6 +86,15 @@ class VacuumInternalClient:
             raise UpstreamUnavailableError(f"unexpected status {resp.status_code}: {path}")
         return resp.json()
 
+    async def get_json_with_params(self, path: str, params: dict[str, Any]) -> Any:
+        """GET with query params that treats 404 as empty result (status queries)."""
+        resp = await self._request("GET", path, params=params)
+        if resp.status_code == 404:
+            return {"items": [], "total": 0}
+        if resp.status_code != 200:
+            raise UpstreamUnavailableError(f"unexpected status {resp.status_code}: {path}")
+        return resp.json()
+
     async def post_json(self, path: str, body: dict[str, Any]) -> Any:
         """POST with the site's success semantics.
 

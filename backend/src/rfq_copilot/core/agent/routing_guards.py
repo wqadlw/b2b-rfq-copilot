@@ -133,3 +133,31 @@ def select_search_keyword(message: str, understanding: dict[str, Any] | None) ->
             if keyword in text or text in keyword:
                 return keyword[:40]
     return text[:40]
+
+
+def detect_inquiry_status_query(message: str) -> bool:
+    """询盘状态查询判定："我的询盘" / "有人跟" / "报价了吗" / "进度" 等追问。
+
+    调用顺序约束：调用方须在本判定**之后**才做询盘创建判定——
+    "我的询盘有人跟吗"含"询盘"二字，若先跑创建判定会被误当新询盘（实测踩坑）。
+    """
+    text = (message or "").strip()
+    if not text:
+        return False
+    markers = (
+        "我的询盘",
+        "我的询价",
+        "有人跟",
+        "有人回复",
+        "有回复吗",
+        "报价了吗",
+        "报价了没",
+        "什么进度",
+        "进度怎么",
+        "进展",
+        "处理了吗",
+        "受理了吗",
+        "询盘状态",
+        "询价状态",
+    )
+    return any(marker in text for marker in markers)

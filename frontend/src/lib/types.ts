@@ -66,7 +66,7 @@ export interface ChatEventData {
 }
 
 export interface EntityCardData {
-  kind: "product" | "supplier" | "solution";
+  kind: "product" | "supplier" | "solution" | "case" | "inquiry_status";
   name: string;
   supplier?: string;
   price?: string;

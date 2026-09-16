@@ -19,7 +19,11 @@ from langgraph.types import interrupt
 from rfq_copilot.adapters.zhaozhenkong_offline.zzk_cases import detect_case_query
 from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import detect_solution_query
 from rfq_copilot.core.agent.llm import LLMClient
-from rfq_copilot.core.agent.routing_guards import apply_routing_guards, select_search_keyword
+from rfq_copilot.core.agent.routing_guards import (
+    apply_routing_guards,
+    detect_inquiry_status_query,
+    select_search_keyword,
+)
 from rfq_copilot.core.manifest import Manifest
 from rfq_copilot.core.memory import SessionStore
 from rfq_copilot.core.policies.faq_matcher import FaqMatcher
@@ -55,6 +59,7 @@ INTENT_ENUM = frozenset(
         "human_request",
         "solution_inquiry",
         "case_inquiry",
+        "status_inquiry",
         "unknown",
     }
 )
@@ -77,6 +82,7 @@ VALID_ROUTES = frozenset(
         "handoff_flow",
         "solution_flow",
         "case_flow",
+        "status_flow",
         "clarify",
         "refuse_fabrication",
     }
@@ -153,6 +159,7 @@ class GraphDeps:
     lead_distribution: LeadDistributionPort | None = None
     solutions: Any | None = None  # 行业方案目录（ZzkSolutionDirectory；离线知识资产）
     cases: Any | None = None  # 客户案例目录（ZzkCaseDirectory；离线知识资产）
+    inquiry_status: Any | None = None  # 询盘状态查询（InquiryStatusPort；真通道专用）
     poisoned_ids: frozenset[str] = field(default_factory=frozenset)
 
     def tool_guard(self, name: str) -> None:
@@ -389,6 +396,35 @@ def _respond_node(deps: GraphDeps) -> Any:
             answer = (
                 f"找到 {len(case_hits)} 个{case_scope}交付案例（卡片含量化指标与客户成效）。白皮书可在案例页留资下载。"
             )
+        elif route == "status_flow" and deps.inquiry_status is not None:
+            tool_calls.append("inquiry_status")
+            events.append(("tool_call", {"tool": "inquiry_status", "status": "running"}))
+            status_payload = await deps.inquiry_status.by_session(state["session_id"])
+            events.append(("tool_call", {"tool": "inquiry_status", "status": "done"}))
+            status_items = status_payload.get("items") or []
+            if not status_items:
+                answer = "当前会话还没有询盘记录。您可以先挑选产品发起询盘。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            for item in status_items[:5]:
+                events.append(
+                    (
+                        "card",
+                        {
+                            "kind": "inquiry_status",
+                            "inquiry_id": str(item["inquiry_id"]),
+                            "title": item["title"],
+                            "status_text": item["status_text"],
+                            "quote_count": item.get("quote_count") or 0,
+                            "created_at": item.get("created_at"),
+                        },
+                    )
+                )
+            status_lines = [
+                f"  · [{item['inquiry_id']}] {item['title']}｜{item['status_text']}"
+                + (f"｜已收 {item['quote_count']} 份报价" if item.get("quote_count") else "")
+                for item in status_items[:5]
+            ]
+            answer = f"本会话共 {len(status_items)} 条询盘：\n" + "\n".join(status_lines)
         elif route in {"product_flow", "selection_flow"} and "search_products" in tools:
             events.append(("tool_call", {"tool": "search_products", "status": "running"}))
             tool_calls.append("search_products")
@@ -794,6 +830,19 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
                 "human_reason": None,
                 "refusal_reason": reason,
             }
+    # 询盘状态查询：必须先于询盘创建判定（"我的询盘有人跟吗"含"询盘"二字）
+    if detect_inquiry_status_query(message) and deps.inquiry_status is not None:
+        return {
+            "intent": "status_inquiry",
+            "confidence": 0.99,
+            "entities": {},
+            "missing_fields": [],
+            "route": "status_flow",
+            "needs_clarification": False,
+            "needs_human": False,
+            "human_reason": None,
+            "refusal_reason": None,
+        }
     # 案例意图确定性路由：案例问法（+可选行业词）→ case_flow（0 token）
     case_industry, case_matched = detect_case_query(message)
     if case_matched:
@@ -883,6 +932,7 @@ def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
             "spec_match_flow": "respond",
             "solution_flow": "respond",
             "case_flow": "respond",
+            "status_flow": "respond",
         },
     )
     for name in ("refuse", "handoff", "respond", "inquiry"):

@@ -130,6 +130,8 @@ def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> R
 
         deps.solutions = ZzkSolutionDirectory(settings.knowledge_data_dir)
         deps.cases = ZzkCaseDirectory(settings.knowledge_data_dir)
+    if ports.inquiry_status is not None:
+        deps.inquiry_status = ports.inquiry_status
     checkpointer = MemorySaver()  # ephemeral default; init_checkpointer swaps in durable backends
     graph = build_graph(deps, checkpointer=checkpointer)
     return Runtime(

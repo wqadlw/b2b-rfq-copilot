@@ -7,7 +7,7 @@ import { ArrowUpRight, BadgeCheck, Building2, MapPin } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 export interface EntityCardData {
-  kind: "product" | "supplier" | "solution";
+  kind: "product" | "supplier" | "solution" | "case" | "inquiry_status";
   name: string;
   supplier?: string;
   brand?: string | null;
@@ -19,6 +19,13 @@ export interface EntityCardData {
   certs?: string[];
   main_products?: string[];
   description?: string;
+  metrics?: { label: string; actual: string; unit: string }[];
+  has_whitepaper?: boolean;
+  inquiry_id?: string | null;
+  status_text?: string | null;
+  quote_count?: number | null;
+  created_at?: string | null;
+  customer?: string | null;
   title?: string;
   industry?: string;
   pain_points?: { title: string; desc: string }[];
@@ -154,6 +161,101 @@ export function SolutionCard({ card }: { card: EntityCardData }): ReactElement {
           >
             查看方案
             <ArrowUpRight className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** CaseCard — 客户案例卡（量化指标 + 客户成效 + 白皮书钩子）。 */
+export function CaseCard({ card }: { card: EntityCardData }): ReactElement {
+  const metrics = (card.metrics ?? []).slice(0, 3);
+  return (
+    <div className="rfq-fade-in w-full max-w-[92%] self-start overflow-hidden rounded-xl border border-success/25 bg-surface transition-all hover:-translate-y-px hover:shadow-sm">
+      <div className="flex items-start gap-2.5 bg-success/10 p-2.5">
+        <span className="rounded bg-success px-1.5 py-0.5 text-[10px] font-medium text-white">
+          {card.industry ?? "交付案例"}
+        </span>
+        <p className="min-w-0 flex-1 text-[13px] font-semibold leading-snug text-ink">
+          {card.title ?? "客户交付案例"}
+        </p>
+      </div>
+      {metrics.length > 0 && (
+        <div className="grid grid-cols-3 gap-2 px-2.5 pt-2">
+          {metrics.map((m, idx) => (
+            <div key={idx} className="rounded-lg bg-background px-2 py-1.5 ring-1 ring-line/70">
+              <p className="truncate text-[10px] leading-3 text-ink-muted" title={m.label}>
+                {m.label}
+              </p>
+              <p className="mono mt-0.5 text-[13px] font-bold text-success">
+                {m.actual}
+                <span className="ml-0.5 text-[10px] font-medium text-ink-secondary">{m.unit}</span>
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+      {card.customer && <p className="px-2.5 pt-2 text-[11px] text-ink-muted">客户：{card.customer}</p>}
+      <div className="flex items-center justify-between border-t border-line/70 bg-background/60 px-2.5 py-1.5">
+        <span className="truncate text-[10px] text-ink-muted">
+          {card.has_whitepaper ? "白皮书可在案例页留资下载" : "供应商已实绩验证"}
+        </span>
+        {card.url && (
+          <a
+            href={card.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-success px-2 py-0.5 text-[11px] font-medium text-white transition-all hover:opacity-90"
+          >
+            查看案例
+            <ArrowUpRight className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** InquiryStatusCard — 询盘进展卡（状态点 + 报价数 + 深链）。 */
+export function InquiryStatusCard({ card }: { card: EntityCardData }): ReactElement {
+  const quotes = card.quote_count ?? 0;
+  const statusTone =
+    card.status_text === "已成交"
+      ? "bg-success"
+      : card.status_text === "已报价" || card.status_text === "洽谈中"
+        ? "bg-primary"
+        : "bg-ink-muted";
+  return (
+    <div className="rfq-fade-in w-full max-w-[92%] self-start rounded-xl border border-line bg-surface transition-all hover:-translate-y-px hover:shadow-sm">
+      <div className="flex items-center gap-2.5 p-2.5">
+        <span
+          className={cn("h-2 w-2 shrink-0 rounded-full", statusTone)}
+          data-status={card.status_text}
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold text-ink">{card.title ?? "我的询盘"}</p>
+          <p className="mono mt-0.5 text-[10px] text-ink-muted">
+            编号 {card.inquiry_id ?? "-"}
+            {card.created_at ? ` · ${String(card.created_at).slice(0, 10)}` : ""}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[12px] font-semibold text-ink">{card.status_text ?? "-"}</p>
+          <p className="text-[10px] text-ink-muted">{quotes > 0 ? `${quotes} 份报价` : "待报价"}</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-between border-t border-line/70 bg-background/60 px-2.5 py-1.5">
+        <span className="text-[10px] text-ink-muted">报价详情以站内用户中心为准</span>
+        {card.inquiry_id && (
+          <a
+            href={`/inquiries/${card.inquiry_id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded px-1.5 py-0.5 text-[11px] text-ink-secondary transition-colors hover:text-primary"
+          >
+            查看报价
           </a>
         )}
       </div>

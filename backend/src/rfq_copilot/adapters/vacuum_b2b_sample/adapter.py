@@ -16,6 +16,7 @@ from rfq_copilot.config.settings import get_settings
 from rfq_copilot.ports.bundle import AdapterPorts
 from rfq_copilot.ports.errors import ConfigError, UpstreamInvalidResponseError
 from rfq_copilot.ports.inquiry_sink import InquiryDraft, InquiryResult, InquirySinkPort
+from rfq_copilot.ports.inquiry_status import InquiryStatusPort
 from rfq_copilot.ports.lead_distribution import DistributionResult, LeadCandidate, LeadDistributionPort
 from rfq_copilot.ports.product_catalog import (
     ProductCatalogPort,
@@ -137,6 +138,19 @@ class VacuumSampleSupplierDirectory(SupplierDirectoryPort):
         raise NotImplementedError("sample adapter: supplier detail not exposed in phase 1")
 
 
+class VacuumSampleInquiryStatus(InquiryStatusPort):
+    """GET /internal-api/v1/inquiries/status?session_id=…（只读状态摘要）。"""
+
+    def __init__(self, client: VacuumInternalClient) -> None:
+        self._client = client
+
+    async def by_session(self, session_id: str) -> dict[str, Any]:
+        payload = await self._client.get_json_with_params(
+            "/internal-api/v1/inquiries/status", params={"session_id": session_id}
+        )
+        return payload if isinstance(payload, dict) else {"items": [], "total": 0}
+
+
 def _as_int(value: str | None) -> int | None:
     """Site PKs are integers (validated `integer|exists`); port ids are str — coerce when numeric."""
     return int(value) if value is not None and value.isdigit() else None
@@ -207,5 +221,6 @@ def build_vacuum_sample_ports(base_url: str, token: str) -> AdapterPorts:
         catalog=VacuumSampleProductCatalog(client),
         suppliers=VacuumSampleSupplierDirectory(client),
         inquiry_sink=VacuumSampleInquirySink(client),
+        inquiry_status=VacuumSampleInquiryStatus(client),
         lead_distribution=VacuumSampleLeadDistribution(),
     )

@@ -18,6 +18,9 @@ from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import (
     detect_solution_query as detect_solution_query,
 )
 from rfq_copilot.core.agent.graph import _humanize_spec_value
+from rfq_copilot.core.agent.routing_guards import (
+    detect_inquiry_status_query as detect_inquiry_status_query,
+)
 from rfq_copilot.core.manifest import Manifest
 from rfq_copilot.core.rag.pipeline import RAGPipeline
 from rfq_copilot.ports.product_catalog import ProductCatalogPort
