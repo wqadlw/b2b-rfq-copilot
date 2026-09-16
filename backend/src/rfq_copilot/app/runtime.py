@@ -39,6 +39,8 @@ class Runtime:
     store: SessionStore
     metrics: "MetricsRegistry"
     faq_registry: FaqRegistry | None = None  # CS-faq: 运营可变 FAQ 库（app 层运营件）
+    checkpointer: Any = None  # 由 init_checkpointer 按配置替换（memory 默认）
+    checkpointer_conn: Any = None  # sqlite 连接句柄（shutdown 时关闭）
 
 
 def _adapter_module(adapter: str) -> Any:
@@ -114,7 +116,8 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
         lead_distribution=ports.lead_distribution if manifest.ports.lead_distribution.enabled else None,
         poisoned_ids=POISONED_IDS,
     )
-    graph = build_graph(deps, checkpointer=MemorySaver())  # demo profile; prod swaps AsyncPostgresSaver
+    checkpointer = MemorySaver()  # ephemeral default; init_checkpointer swaps in durable backends
+    graph = build_graph(deps, checkpointer=checkpointer)
     return Runtime(
         manifest=manifest,
         deps=deps,
@@ -122,7 +125,42 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
         store=store,
         metrics=MetricsRegistry(),
         faq_registry=FaqRegistry(build_faq()),
+        checkpointer=checkpointer,
     )
+
+
+async def init_checkpointer(runtime: Runtime, settings: Any | None = None) -> None:
+    """Attach the configured checkpointer and recompile the graph (async backends need a loop).
+
+    memory (default): the runtime already carries a MemorySaver — no-op.
+    sqlite: durable single-node store; interrupt()/resume state survives a process restart.
+    """
+    cfg = settings or get_settings()
+    backend = cfg.checkpointer_backend
+    if backend == "memory":
+        return
+    if backend != "sqlite":
+        raise ConfigError(f"unsupported checkpointer_backend: {backend!r} (expected memory|sqlite)")
+
+    import aiosqlite
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    path = Path(cfg.checkpointer_sqlite_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = await aiosqlite.connect(str(path))
+    saver = AsyncSqliteSaver(conn)
+    await saver.setup()
+    runtime.checkpointer = saver
+    runtime.checkpointer_conn = conn
+    runtime.graph = build_graph(runtime.deps, checkpointer=saver)
+
+
+async def close_checkpointer(runtime: Runtime) -> None:
+    """Release the durable checkpointer connection (no-op for memory)."""
+    conn = runtime.checkpointer_conn
+    if conn is not None:
+        await conn.close()
+        runtime.checkpointer_conn = None
 
 
 def ui_config(runtime: Runtime) -> dict[str, Any]:

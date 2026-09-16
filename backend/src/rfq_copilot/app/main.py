@@ -22,7 +22,14 @@ from rfq_copilot.app.guest_paths import (
 )
 from rfq_copilot.app.limiter import DailyTokenBudget, SlidingWindowLimiter
 from rfq_copilot.app.metrics import VALID_PERIODS
-from rfq_copilot.app.runtime import Runtime, build_runtime, seed_demo, ui_config
+from rfq_copilot.app.runtime import (
+    Runtime,
+    build_runtime,
+    close_checkpointer,
+    init_checkpointer,
+    seed_demo,
+    ui_config,
+)
 from rfq_copilot.app.sse_mapper import map_graph_stream
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.schemas.chat import (
@@ -75,8 +82,13 @@ def _is_zero_token_intent(message: str) -> bool:
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        await seed_demo(get_runtime())
-        yield
+        runtime = get_runtime()
+        await init_checkpointer(runtime)
+        await seed_demo(runtime)
+        try:
+            yield
+        finally:
+            await close_checkpointer(runtime)
 
     app = FastAPI(title="b2b-rfq-copilot", version="0.1.0", lifespan=lifespan)
 

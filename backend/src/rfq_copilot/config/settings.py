@@ -36,6 +36,11 @@ class Settings(BaseSettings):
 
     knowledge_data_dir: str = ""
 
+    # Graph checkpointer backend: "memory" (ephemeral; tests/demo), "sqlite" (durable
+    # single-node: interrupt()/resume state survives a restart; M1+ default candidate).
+    checkpointer_backend: str = "memory"
+    checkpointer_sqlite_path: str = ".data/checkpoints.sqlite"
+
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
