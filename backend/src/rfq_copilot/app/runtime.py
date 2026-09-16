@@ -89,7 +89,10 @@ def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtim
     from rfq_copilot.adapters.zhaozhenkong_offline.zzk_catalog import ZzkProductCatalog
 
     if get_settings().knowledge_data_dir:
+        from rfq_copilot.adapters.zhaozhenkong_offline.zzk_suppliers import ZzkSupplierDirectory
+
         ports.catalog = ZzkProductCatalog(get_settings().knowledge_data_dir)
+        ports.suppliers = ZzkSupplierDirectory(get_settings().knowledge_data_dir)
     settings = get_settings()
     client = llm or OpenAICompatLLM(
         base_url=settings.llm_base_url, api_key=settings.llm_api_key, model=settings.llm_model
