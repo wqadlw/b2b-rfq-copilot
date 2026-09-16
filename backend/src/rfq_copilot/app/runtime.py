@@ -83,20 +83,27 @@ async def seed_demo(runtime: Runtime) -> None:
     await rag.ingest(chunks)
 
 
-def build_runtime(adapter: str = "demo", llm: LLMClient | None = None) -> Runtime:
+def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> Runtime:
+    """组装运行时。adapter 缺省取 ADAPTER 环境变量（默认 demo）。
+
+    - demo：内置演示数据；若 KNOWLEDGE_DATA_DIR 非空，则目录/供应商切离线导出数据
+      （站点真实产品的离线只读副本）。
+    - 其他适配器（如 vacuum_b2b_sample）：由适配器自备全部端口（站点内部 API 真通道），
+      不做离线数据覆盖——两条数据路径不得混用。
+    """
+    settings = get_settings()
+    adapter = adapter or settings.adapter or "demo"  # 空 ADAPTER 环境变量回落 demo
     adapter_dir = ADAPTERS_DIR / adapter
     manifest = load_manifest(adapter_dir)  # V1~V7 validation (V2 via module import below)
     module = _adapter_module(adapter)  # V2: enabled ports must have an implementation package
     ports = module.build_demo_ports()
-    # ZZK 真实数据模式：产品目录切真实数据（KNOWLEDGE_DATA_DIR 非空时）
-    from rfq_copilot.adapters.zhaozhenkong_offline.zzk_catalog import ZzkProductCatalog
-
-    if get_settings().knowledge_data_dir:
+    if adapter == "demo" and settings.knowledge_data_dir:
+        # ZZK 真实数据模式：产品目录切真实数据（KNOWLEDGE_DATA_DIR 非空时）
+        from rfq_copilot.adapters.zhaozhenkong_offline.zzk_catalog import ZzkProductCatalog
         from rfq_copilot.adapters.zhaozhenkong_offline.zzk_suppliers import ZzkSupplierDirectory
 
-        ports.catalog = ZzkProductCatalog(get_settings().knowledge_data_dir)
-        ports.suppliers = ZzkSupplierDirectory(get_settings().knowledge_data_dir)
-    settings = get_settings()
+        ports.catalog = ZzkProductCatalog(settings.knowledge_data_dir)
+        ports.suppliers = ZzkSupplierDirectory(settings.knowledge_data_dir)
     client = llm or OpenAICompatLLM(
         base_url=settings.llm_base_url, api_key=settings.llm_api_key, model=settings.llm_model
     )
