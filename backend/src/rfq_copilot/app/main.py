@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
 from rfq_copilot.app.guest_paths import (
+    detect_case_query,
     detect_guest_inquiry_intent,
     detect_guest_query,
     detect_solution_query,
@@ -182,6 +183,39 @@ def create_app() -> FastAPI:
                     )
                     rtg.store.append_message(body.session_id, "assistant", sol_answer)
                     return await _guest_stream(sol_answer, sol_events)
+
+            # G4.5: 客户案例捷径（0 token 公开背书：量化指标/客户成效，含 case 卡）
+            case_industry, case_matched = detect_case_query(body.message)
+            if case_matched and rtg.deps.cases is not None:
+                rtg.store.append_message(body.session_id, "user", body.message)
+                case_hits = rtg.deps.cases.by_industry_slug(case_industry)[:3]
+                if case_hits:
+                    case_events: list[tuple[str, dict[str, Any]]] = []
+                    for case in case_hits:
+                        case_events.append(("citation", {"title": case.title, "url": case.url, "trust": "platform"}))
+                        case_events.append(
+                            (
+                                "card",
+                                {
+                                    "kind": "case",
+                                    "title": case.title,
+                                    "industry": case.industry_name,
+                                    "customer": case.customer_name,
+                                    "metrics": case.metrics,
+                                    "result": case.result,
+                                    "has_whitepaper": case.has_whitepaper,
+                                    "supplier": case.supplier,
+                                    "url": case.url,
+                                },
+                            )
+                        )
+                    case_scope = f"「{case_hits[0].industry_name}」行业" if case_industry else ""
+                    case_answer = (
+                        f"找到 {len(case_hits)} 个{case_scope}交付案例"
+                        "（卡片含量化指标与客户成效）。白皮书可在案例页留资下载。"
+                    )
+                    rtg.store.append_message(body.session_id, "assistant", case_answer)
+                    return await _guest_stream(case_answer, case_events)
 
             # G3: 供应商白名单（0 token 公开档案：列表/详情，含 card 结构化事件）
             supplier_mode = detect_supplier_query(body.message, rtg.deps.suppliers)

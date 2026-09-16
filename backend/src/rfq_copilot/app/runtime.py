@@ -124,10 +124,12 @@ def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> R
         poisoned_ids=POISONED_IDS,
     )
     if settings.knowledge_data_dir:
-        # 行业方案目录（demo 与真通道模式都注入：方案是离线知识资产，不依赖站点在线）
+        # 行业方案/案例目录（demo 与真通道模式都注入：离线知识资产，不依赖站点在线）
+        from rfq_copilot.adapters.zhaozhenkong_offline.zzk_cases import ZzkCaseDirectory
         from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import ZzkSolutionDirectory
 
         deps.solutions = ZzkSolutionDirectory(settings.knowledge_data_dir)
+        deps.cases = ZzkCaseDirectory(settings.knowledge_data_dir)
     checkpointer = MemorySaver()  # ephemeral default; init_checkpointer swaps in durable backends
     graph = build_graph(deps, checkpointer=checkpointer)
     return Runtime(

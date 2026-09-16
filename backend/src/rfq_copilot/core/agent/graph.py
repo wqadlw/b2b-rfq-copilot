@@ -16,6 +16,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
+from rfq_copilot.adapters.zhaozhenkong_offline.zzk_cases import detect_case_query
 from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import detect_solution_query
 from rfq_copilot.core.agent.llm import LLMClient
 from rfq_copilot.core.agent.routing_guards import apply_routing_guards, select_search_keyword
@@ -52,6 +53,8 @@ INTENT_ENUM = frozenset(
         "certification_inquiry",
         "complaint",
         "human_request",
+        "solution_inquiry",
+        "case_inquiry",
         "unknown",
     }
 )
@@ -73,6 +76,7 @@ VALID_ROUTES = frozenset(
         "inquiry_flow",
         "handoff_flow",
         "solution_flow",
+        "case_flow",
         "clarify",
         "refuse_fabrication",
     }
@@ -148,6 +152,7 @@ class GraphDeps:
     inquiry_sink: InquirySinkPort | None = None
     lead_distribution: LeadDistributionPort | None = None
     solutions: Any | None = None  # 行业方案目录（ZzkSolutionDirectory；离线知识资产）
+    cases: Any | None = None  # 客户案例目录（ZzkCaseDirectory；离线知识资产）
     poisoned_ids: frozenset[str] = field(default_factory=frozenset)
 
     def tool_guard(self, name: str) -> None:
@@ -351,6 +356,38 @@ def _respond_node(deps: GraphDeps) -> Any:
             answer = (
                 f"「{solution.industry_name}」行业已有一套成熟方案：{solution.name}。"
                 "卡片内含痛点分析与设备拓扑，点击可查看完整方案。"
+            )
+        elif route == "case_flow" and deps.cases is not None:
+            tool_calls.append("get_cases")
+            events.append(("tool_call", {"tool": "get_cases", "status": "running"}))
+            case_entities = (state.get("understanding") or {}).get("entities") or {}
+            case_industry = case_entities.get("industry") or detect_case_query(message)[0]
+            case_hits = deps.cases.by_industry_slug(case_industry)[:3]
+            events.append(("tool_call", {"tool": "get_cases", "status": "done"}))
+            if not case_hits:
+                answer = "暂无已发布案例。您可以先看产品参数，或直接提交询盘。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            for case in case_hits:
+                events.append(("citation", {"title": case.title, "url": case.url, "trust": "platform"}))
+                events.append(
+                    (
+                        "card",
+                        {
+                            "kind": "case",
+                            "title": case.title,
+                            "industry": case.industry_name,
+                            "customer": case.customer_name,
+                            "metrics": case.metrics,
+                            "result": case.result,
+                            "has_whitepaper": case.has_whitepaper,
+                            "supplier": case.supplier,
+                            "url": case.url,
+                        },
+                    )
+                )
+            case_scope = f"「{case_hits[0].industry_name}」行业" if case_industry else ""
+            answer = (
+                f"找到 {len(case_hits)} 个{case_scope}交付案例（卡片含量化指标与客户成效）。白皮书可在案例页留资下载。"
             )
         elif route in {"product_flow", "selection_flow"} and "search_products" in tools:
             events.append(("tool_call", {"tool": "search_products", "status": "running"}))
@@ -757,6 +794,34 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
                 "human_reason": None,
                 "refusal_reason": reason,
             }
+    # 案例意图确定性路由：案例问法（+可选行业词）→ case_flow（0 token）
+    case_industry, case_matched = detect_case_query(message)
+    if case_matched:
+        return {
+            "intent": "case_inquiry",
+            "confidence": 0.99,
+            "entities": {"industry": case_industry} if case_industry else {},
+            "missing_fields": [],
+            "route": "case_flow",
+            "needs_clarification": False,
+            "needs_human": False,
+            "human_reason": None,
+            "refusal_reason": None,
+        }
+    # 方案意图确定性路由：行业词 + 方案问法 → solution_flow（0 token）
+    solution_industry = detect_solution_query(message)
+    if solution_industry:
+        return {
+            "intent": "solution_inquiry",
+            "confidence": 0.99,
+            "entities": {"industry": solution_industry},
+            "missing_fields": [],
+            "route": "solution_flow",
+            "needs_clarification": False,
+            "needs_human": False,
+            "human_reason": None,
+            "refusal_reason": None,
+        }
     # 询盘意图确定性路由：0 LLM token 直达 inquiry_flow（确认卡 human-in-the-loop）
     if message.strip() and ("询盘" in message or "询价" in message or "要买" in message or "求购" in message):
         return {
@@ -816,6 +881,8 @@ def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
             "clarify": "respond",
             "faq_answer": "respond",
             "spec_match_flow": "respond",
+            "solution_flow": "respond",
+            "case_flow": "respond",
         },
     )
     for name in ("refuse", "handoff", "respond", "inquiry"):

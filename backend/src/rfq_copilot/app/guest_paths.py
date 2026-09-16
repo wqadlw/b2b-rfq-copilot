@@ -11,6 +11,9 @@ import inspect
 import re
 from typing import Any
 
+from rfq_copilot.adapters.zhaozhenkong_offline.zzk_cases import (
+    detect_case_query as detect_case_query,
+)
 from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import (
     detect_solution_query as detect_solution_query,
 )
