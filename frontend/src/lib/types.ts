@@ -6,6 +6,11 @@ export interface UiConfig {
   chat: {
     welcome_message: string | null;
     suggested_questions: string[];
+    wechat?: {
+      qrcode_url: string | null;
+      contact_name: string | null;
+      guidance_text: string | null;
+    };
   };
   theme: { primary: string | null };
   capabilities: Record<string, boolean>;
@@ -22,11 +27,14 @@ export type ChatEventName =
   | "retrieval"
   | "answer_delta"
   | "citation"
+  | "card"
   | "inquiry_confirm"
   | "inquiry_created"
   | "handoff"
   | "error"
   | "wechat_guidance"
+  | "login_required"
+  | "token_budget_exceeded"
   | "done";
 
 export interface ChatEventData {
@@ -44,6 +52,30 @@ export interface ChatEventData {
   reason?: string;
   qrcode_url?: string;
   guidance?: string;
+  contact_name?: string;
+  kind?: string;
+  name?: string;
+  supplier?: string;
+  price?: string;
+  url?: string;
+  specs?: Record<string, string>;
+  region?: string | null;
+  certs?: string[];
+  main_products?: string[];
+  description?: string;
+}
+
+export interface EntityCardData {
+  kind: "product" | "supplier";
+  name: string;
+  supplier?: string;
+  price?: string;
+  url?: string;
+  specs?: Record<string, string>;
+  region?: string | null;
+  certs?: string[];
+  main_products?: string[];
+  description?: string;
 }
 
 export interface Citation {
@@ -52,13 +84,22 @@ export interface Citation {
   trust: string;
 }
 
+export interface WechatQr {
+  url: string;
+  contact: string;
+  guidance?: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   statusLine?: string;
   inquiryCreated?: boolean;
   citations?: Citation[];
+  cards?: EntityCardData[];
   error?: boolean;
   wechatGuidance?: string;
+  wechatQr?: WechatQr;
+  loginRequired?: boolean;
   feedback?: "helpful" | "not_helpful" | null;
 }

@@ -31,6 +31,7 @@ interface StreamOptions {
   contact?: { name?: string; phone?: string } | null;
   quantity?: number | null;
   productId?: string | null;
+  draftOverride?: { quantity?: number | null; contact_name?: string; contact_phone?: string } | null;
   signal?: AbortSignal;
   onEvent: (event: ChatEventName, data: ChatEventData) => void;
 }
@@ -47,6 +48,7 @@ export async function streamChat(options: StreamOptions): Promise<void> {
     contact: options.contact,
     quantity: options.quantity,
     action: options.action,
+    draft_override: options.draftOverride ?? undefined,
   };
   await fetchEventSource(`${ENDPOINT}/api/v1/chat/stream`, {
     method: "POST",

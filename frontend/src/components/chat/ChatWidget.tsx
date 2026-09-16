@@ -10,12 +10,15 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { SendHorizonal, Sparkles, Square } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Pencil, SendHorizonal, Sparkles, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
+import { ProductCard, SupplierCard, type EntityCardData } from "./EntityCard";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
+import { cn } from "../../lib/utils";
+import { createInquiryCardState, inquiryReducer } from "../../lib/inquiryReducer";
 import type { ChatMessage, UiConfig } from "../../lib/types";
 
 const NEAR_BOTTOM_PX = 80;
@@ -33,7 +36,8 @@ const DEMO_PRODUCT_NAMES: Record<string, string> = {
 };
 
 interface PendingConfirm {
-  confirmId: string;
+  card: import("../../lib/inquiryReducer").InquiryCardState;
+  override?: { quantity?: number | null; contact_name?: string; contact_phone?: string };
   draft: {
     product_id?: string | number | null;
     quantity?: number | null;
@@ -46,6 +50,8 @@ interface PendingConfirm {
 export function ChatWidget(): ReactElement {
   const [config, setConfig] = useState<UiConfig | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // 分级访问演示：真实站点由宿主签发 user_ref；demo 用模拟登录按钮切换游客/登录态
+  const [userRef, setUserRef] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -55,6 +61,7 @@ export function ChatWidget(): ReactElement {
   const stickToBottom = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
   const lastUserMessage = useRef<string>("");
+  const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     void (async () => {
@@ -73,7 +80,7 @@ export function ChatWidget(): ReactElement {
           }
         } catch { /* 解析失败走新建 */ }
       }
-      const session = await createSession(null);
+      const session = await createSession(userRef);
       setSessionId(session);
       setMessages([{ role: "assistant", content: cfg.chat.welcome_message ?? "您好，我是询盘助手。" }]);
     })();
@@ -138,14 +145,18 @@ export function ChatWidget(): ReactElement {
     abortRef.current?.abort();
   };
 
-  const send = async (message: string, action?: "confirm_inquiry" | "cancel_inquiry"): Promise<void> => {
+  const send = async (
+    message: string,
+    action?: "confirm_inquiry" | "cancel_inquiry",
+    draftOverride?: { quantity?: number | null; contact_name?: string; contact_phone?: string } | null,
+  ): Promise<void> => {
     if (busy || (!message && !action)) return;
     setBusy(true);
     // 自愈：会话创建失败（如引擎重启期间加载的页面）时，发送前自动重建会话
     let sid = sessionId;
     if (sid === null) {
       try {
-        sid = await createSession(null);
+        sid = await createSession(userRef);
         setSessionId(sid);
       } catch {
         updateLast({ content: "无法连接引擎，请确认服务已启动后重试。", statusLine: undefined });
@@ -153,10 +164,19 @@ export function ChatWidget(): ReactElement {
         return;
       }
     }
-    setPendingConfirm(null);
+    if (!action) {
+      setPendingConfirm(null);
+    }
     if (message) {
       lastUserMessage.current = message;
       setMessages((prev) => [...prev, { role: "user", content: message }]);
+    }
+    if (action === "confirm_inquiry") {
+      setMessages((prev) => [...prev, { role: "user", content: "确认提交询盘" }]);
+      setPendingConfirm((prev) => (prev ? { ...prev, card: inquiryReducer(prev.card, { type: "CONFIRM" }) } : prev));
+    } else if (action === "cancel_inquiry") {
+      setMessages((prev) => [...prev, { role: "user", content: "取消提交询盘" }]);
+      setPendingConfirm(null);
     }
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
     const controller = new AbortController();
@@ -166,10 +186,12 @@ export function ChatWidget(): ReactElement {
         sessionId: sid,
         message,
         action,
+        userRef,
         signal: controller.signal,
         contact: { name: "demo 用户", phone: "13800000000" },
         quantity: 10,
         productId: null,
+        draftOverride,
         onEvent: (name, data) => {
           if (name === "status" || name === "tool_call") {
             updateLast({ statusLine: data.message ?? `正在调用 ${data.tool ?? "工具"}…` });
@@ -185,21 +207,65 @@ export function ChatWidget(): ReactElement {
               ];
               return [...prev.slice(0, -1), { ...last, citations: list }];
             });
+          } else if (name === "card" && data.kind) {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last === undefined) return prev;
+              const card: EntityCardData = {
+                kind: data.kind as "product" | "supplier",
+                name: String(data.name ?? ""),
+                supplier: data.supplier !== undefined ? String(data.supplier) : undefined,
+                price: data.price !== undefined ? String(data.price) : undefined,
+                url: data.url !== undefined ? String(data.url) : undefined,
+                specs: (data.specs as Record<string, string>) ?? undefined,
+                region: data.region !== undefined ? (data.region as string | null) : undefined,
+                certs: (data.certs as string[]) ?? undefined,
+                main_products: (data.main_products as string[]) ?? undefined,
+                description: data.description !== undefined ? String(data.description) : undefined,
+              };
+              const list = [...(last.cards ?? []), card];
+              return [...prev.slice(0, -1), { ...last, cards: list }];
+            });
           } else if (name === "inquiry_confirm") {
-            setPendingConfirm({ confirmId: data.confirm_id ?? "", draft: data.draft ?? {} });
+            setPendingConfirm({ card: createInquiryCardState(data.confirm_id ?? ""), draft: data.draft ?? {} });
           } else if (name === "inquiry_created") {
-            setPendingConfirm(null);
+            setPendingConfirm((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    card: inquiryReducer(prev.card, { type: "CREATED", inquiryId: String(data.inquiry_id ?? "") }),
+                  }
+                : prev,
+            );
             updateLast({ inquiryCreated: true });
-          } else if (name === "wechat_guidance" && data.guidance) {
-            updateLast({ wechatGuidance: data.guidance });
+          } else if (name === "wechat_guidance") {
+            updateLast({
+              wechatGuidance: data.guidance ?? undefined,
+              wechatQr:
+                data.qrcode_url !== undefined && data.qrcode_url !== ""
+                  ? { url: data.qrcode_url, contact: data.contact_name ?? "专属工程师", guidance: data.guidance }
+                  : undefined,
+            });
+          } else if (name === "login_required") {
+            updateLast({ loginRequired: true });
+          } else if (name === "token_budget_exceeded") {
+            updateLast({ loginRequired: false });
           } else if (name === "error") {
             updateLast({ error: true });
+            setPendingConfirm((prev) =>
+              prev ? { ...prev, card: inquiryReducer(prev.card, { type: "SUBMIT_ERROR" }) } : prev,
+            );
           }
         },
       });
     } catch {
       // ai-chatbot 模式：出错不清输入，用户可直接改后重试
       setInput(message || lastUserMessage.current);
+      if (action === "confirm_inquiry") {
+        setPendingConfirm((prev) =>
+          prev ? { ...prev, card: inquiryReducer(prev.card, { type: "SUBMIT_ERROR" }) } : prev,
+        );
+      }
       if (controller.signal.aborted) {
         updateLast({ content: "已停止生成。", statusLine: undefined });
       } else {
@@ -283,6 +349,14 @@ export function ChatWidget(): ReactElement {
                 ))}
               </div>
             )}
+            {message.cards && message.cards.length > 0 && (
+              <CardStack
+                cards={message.cards}
+                expanded={!!expandedCards[index]}
+                onToggle={() => setExpandedCards((prev) => ({ ...prev, [index]: !prev[index] }))}
+                onInquiry={(card) => void send(`我要询盘：${card.name}`)}
+              />
+            )}
             {message.error && lastUserMessage.current !== "" && (
               <button
                 type="button"
@@ -295,35 +369,116 @@ export function ChatWidget(): ReactElement {
           </div>
         ))}
         {pendingConfirm && (
-          <div className="rfq-fade-in ml-auto w-[88%] rounded-xl border border-warning/60 bg-warning/10 p-3">
-            <p className="text-sm font-semibold text-ink">确认提交询盘</p>
+          <div
+            className={cn(
+              "rfq-fade-in ml-auto w-[88%] rounded-xl border p-3 transition-colors",
+              pendingConfirm.card.phase === "sent"
+                ? "border-success/50 bg-success/5"
+                : pendingConfirm.card.phase === "error"
+                  ? "border-danger/50 bg-danger/5"
+                  : "border-warning/60 bg-warning/10",
+            )}
+          >
+            {pendingConfirm.card.phase === "sent" ? (
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-success">
+                <CheckCircle2 className="h-4 w-4" />
+                询盘已发送{pendingConfirm.card.inquiryId ? ` · 编号 ${pendingConfirm.card.inquiryId}` : ""}
+              </p>
+            ) : pendingConfirm.card.phase === "error" ? (
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-danger">
+                <AlertCircle className="h-4 w-4" />
+                提交失败，请重试
+              </p>
+            ) : (
+              <p className="text-sm font-semibold text-ink">确认提交询盘</p>
+            )}
             <dl className="mt-1.5 space-y-0.5 text-xs text-ink-secondary">
               {pendingConfirm.draft.product_id !== undefined && pendingConfirm.draft.product_id !== null && (
                 <div>产品：{productName(pendingConfirm.draft.product_id)}</div>
               )}
-              {pendingConfirm.draft.quantity !== undefined && pendingConfirm.draft.quantity !== null && (
-                <div>数量：{pendingConfirm.draft.quantity}</div>
-              )}
-              {pendingConfirm.draft.contact_name !== undefined && (
-                <div>联系人：{pendingConfirm.draft.contact_name}</div>
-              )}
-              {pendingConfirm.draft.contact_phone_masked !== undefined && (
-                <div>电话：{pendingConfirm.draft.contact_phone_masked}</div>
+              {pendingConfirm.card.phase === "editing" ? (
+                <ReviewEditor
+                  quantity={pendingConfirm.override?.quantity ?? (pendingConfirm.draft.quantity as number | null)}
+                  contactName={pendingConfirm.override?.contact_name ?? pendingConfirm.draft.contact_name}
+                  onChange={(patch) =>
+                    setPendingConfirm((prev) => (prev ? { ...prev, override: { ...prev.override, ...patch } } : prev))
+                  }
+                  onSubmit={() =>
+                    void send("", "confirm_inquiry", {
+                      quantity: pendingConfirm.override?.quantity ?? null,
+                      contact_name: pendingConfirm.override?.contact_name,
+                      contact_phone: pendingConfirm.override?.contact_phone,
+                    })
+                  }
+                />
+              ) : (
+                <>
+                  {pendingConfirm.draft.quantity !== undefined && pendingConfirm.draft.quantity !== null && (
+                    <div>数量：{pendingConfirm.draft.quantity}</div>
+                  )}
+                  {pendingConfirm.draft.contact_name !== undefined && (
+                    <div>联系人：{pendingConfirm.draft.contact_name}</div>
+                  )}
+                  {pendingConfirm.draft.contact_phone_masked !== undefined && (
+                    <div>电话：{pendingConfirm.draft.contact_phone_masked}</div>
+                  )}
+                </>
               )}
             </dl>
-            <p className="mt-1.5 text-[11px] text-ink-muted">提交后将进入供应商报价流程，请核对以上信息。</p>
-            <div className="mt-2.5 flex gap-2">
-              <Button size="sm" onClick={() => void send("", "confirm_inquiry")}>
-                确认提交
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => void send("", "cancel_inquiry")}>
-                取消
-              </Button>
-            </div>
+            {pendingConfirm.card.phase === "editing" && (
+              <>
+                <p className="mt-1.5 text-[11px] text-ink-muted">提交后将进入供应商报价流程，请核对以上信息。</p>
+                <div className="mt-2.5 flex gap-2">
+                  <Button size="sm" onClick={() => void send("", "confirm_inquiry", pendingConfirm.override ?? null)}>
+                    确认提交
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => void send("", "cancel_inquiry")}>
+                    取消
+                  </Button>
+                </div>
+              </>
+            )}
+            {pendingConfirm.card.phase === "submitting" && (
+              <div className="mt-2.5">
+                <Button size="sm" disabled>
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  提交中…
+                </Button>
+              </div>
+            )}
+            {pendingConfirm.card.phase === "sent" && (
+              <p className="mt-1.5 text-[11px] text-ink-muted">
+                供应商将在 24 小时内回复；可添加微信工程师补充资料。
+              </p>
+            )}
+            {pendingConfirm.card.phase === "error" && (
+              <div className="mt-2.5">
+                <Button size="sm" onClick={() => void send("", "confirm_inquiry", pendingConfirm.override ?? null)}>
+                  重试发送
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
 
+      {/* 分级访问演示条：真实站点由宿主注入登录态，demo 用按钮模拟 */}
+      <div className="flex items-center justify-between border-b border-border px-4 py-1.5 text-xs text-ink-muted">
+        <span>
+          {userRef
+            ? "已登录：完整功能可用（每日 AI 额度内）"
+            : "游客模式：常见问题免费答，深度咨询请登录"}
+        </span>
+        {userRef ? (
+          <button type="button" className="text-primary hover:underline" onClick={() => setUserRef(null)}>
+            退出登录（演示）
+          </button>
+        ) : (
+          <button type="button" className="text-primary hover:underline" onClick={() => setUserRef("demo-user")}>
+            登录 / 注册（演示）
+          </button>
+        )}
+      </div>
       {/* Input：busy 时发送钮变停止钮 */}
       <form onSubmit={onSubmit} className="border-t border-line bg-surface p-3">
         <div className="relative">
@@ -338,7 +493,7 @@ export function ChatWidget(): ReactElement {
             }}
             onKeyDown={onKeyDown}
             placeholder={busy ? "对方正在输入…" : "描述您的采购需求，如：找一台无油真空泵…"}
-            className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-14 text-base focus:outline-none focus:ring-2 focus:ring-primary sm:text-sm"
           />
           {busy ? (
             <button
@@ -365,5 +520,148 @@ export function ChatWidget(): ReactElement {
         内容由 AI 生成 · 价格与货期以供应商确认为准
       </p>
     </div>
+  );
+}
+
+/** CardStack — 卡片堆叠：≤3 全显，超出折叠"查看全部"（Shopify Sidekick 模式，不做轮播）。 */
+function CardStack({
+  cards,
+  expanded,
+  onToggle,
+  onInquiry,
+}: {
+  cards: EntityCardData[];
+  expanded: boolean;
+  onToggle: () => void;
+  onInquiry: (card: EntityCardData) => void;
+}): ReactElement {
+  const visible = expanded ? cards : cards.slice(0, 3);
+  return (
+    <div className="ml-8 flex w-full flex-col gap-2">
+      {visible.map((card, idx) =>
+        card.kind === "product" ? (
+          <ProductCard key={idx} card={card} onInquiry={onInquiry} />
+        ) : (
+          <SupplierCard key={idx} card={card} />
+        ),
+      )}
+      {cards.length > 3 && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="self-start text-xs text-primary transition-colors hover:underline"
+        >
+          {expanded ? "收起" : `查看全部 ${cards.length} 个`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** ReviewEditor — 确认卡行内编辑（Baymard review-style：label+value+铅笔，逐字段编辑）。 */
+function ReviewEditor({
+  quantity,
+  contactName,
+  onChange,
+  onSubmit,
+}: {
+  quantity: number | null | undefined;
+  contactName: string | undefined;
+  onChange: (patch: { quantity?: number; contact_name?: string }) => void;
+  onSubmit: () => void;
+}): ReactElement {
+  const [editing, setEditing] = useState<"quantity" | "contact_name" | null>(null);
+  const [draftQty, setDraftQty] = useState(String(quantity ?? ""));
+  const [draftName, setDraftName] = useState(contactName ?? "");
+
+  const commit = (): void => {
+    if (editing === "quantity") {
+      const n = Number.parseInt(draftQty, 10);
+      if (Number.isFinite(n) && n > 0) onChange({ quantity: n });
+    } else if (editing === "contact_name") {
+      if (draftName.trim()) onChange({ contact_name: draftName.trim() });
+    }
+    setEditing(null);
+  };
+
+  return (
+    <>
+      {quantity !== undefined && quantity !== null && (
+        <div className="flex items-center gap-1">
+          {editing === "quantity" ? (
+            <>
+              <input
+                autoFocus
+                value={draftQty}
+                onChange={(e) => setDraftQty(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commit();
+                  if (e.key === "Escape") setEditing(null);
+                }}
+                inputMode="numeric"
+                className="w-16 rounded border border-primary bg-surface px-1 py-0.5 text-xs text-base sm:text-xs focus:outline-none"
+              />
+              <button type="button" aria-label="保存" onClick={commit} className="text-primary hover:underline">
+                保存
+              </button>
+            </>
+          ) : (
+            <>
+              <span>数量：{quantity}</span>
+              <button
+                type="button"
+                aria-label="编辑数量"
+                onClick={() => setEditing("quantity")}
+                className="text-ink-muted hover:text-primary"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {contactName !== undefined && (
+        <div className="flex items-center gap-1">
+          {editing === "contact_name" ? (
+            <>
+              <input
+                autoFocus
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commit();
+                  if (e.key === "Escape") setEditing(null);
+                }}
+                className="w-24 rounded border border-primary bg-surface px-1 py-0.5 text-xs text-base sm:text-xs focus:outline-none"
+              />
+              <button type="button" aria-label="保存" onClick={commit} className="text-primary hover:underline">
+                保存
+              </button>
+            </>
+          ) : (
+            <>
+              <span>联系人：{contactName}</span>
+              <button
+                type="button"
+                aria-label="编辑联系人"
+                onClick={() => setEditing("contact_name")}
+                className="text-ink-muted hover:text-primary"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          commit();
+          onSubmit();
+        }}
+        className="hidden"
+        aria-hidden
+      />
+    </>
   );
 }

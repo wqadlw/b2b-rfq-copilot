@@ -268,6 +268,19 @@ def _respond_node(deps: GraphDeps) -> Any:
                         whitelist.add(product.price_display.text.strip())
                     lines.append(f"  {product.name}（{product.supplier_name}）{specs_text}｜{price_text}")
                     events.append(("citation", {"title": product.name, "trust": "merchant"}))
+                    events.append(
+                        (
+                            "card",
+                            {
+                                "kind": "product",
+                                "name": product.name,
+                                "supplier": product.supplier_name,
+                                "price": price_text,
+                                "url": product.url,
+                                "specs": dict(list(product.specs.items())[:3]),
+                            },
+                        )
+                    )
                 answer = "\n".join(lines)
         elif route in {"product_flow", "selection_flow"} and "search_products" in tools:
             events.append(("tool_call", {"tool": "search_products", "status": "running"}))
@@ -282,6 +295,19 @@ def _respond_node(deps: GraphDeps) -> Any:
                     whitelist.add(price.strip())
                 lines.append(f"1. {item.name}（{item.supplier_name}）{specs}；价格：{price}。详情：{item.url}")
                 events.append(("citation", {"title": item.name, "url": item.url, "trust": "merchant"}))
+                events.append(
+                    (
+                        "card",
+                        {
+                            "kind": "product",
+                            "name": item.name,
+                            "supplier": item.supplier_name,
+                            "price": price,
+                            "url": item.url,
+                            "specs": dict(list(item.specs.items())[:3]),
+                        },
+                    )
+                )
             answer = "\n".join(lines) if result.items else "暂未找到匹配产品，您可以补充关键词或提交询盘。"
         elif route == "knowledge_flow" and deps.rag is not None:
             tool_calls.append("search_knowledge")
@@ -318,6 +344,44 @@ def _respond_node(deps: GraphDeps) -> Any:
                 logger.warning("citation.invalid", invalid=invalid)  # 流式后校验：违规引用记 trace
             answer += "\n如需进一步确认，欢迎提交询盘。"
         elif route == "supplier_flow" and "get_suppliers" in tools and deps.suppliers is not None:
+            # 详情分支：问句点名公司名（前 6 字匹配）→ get_detail 档案卡
+            _detail = None
+            for _s in getattr(deps.suppliers, "_suppliers", []) or []:
+                if _s.name[:6] and _s.name[:6] in message:
+                    _detail = await deps.suppliers.get_detail(_s.id)
+                    break
+            if _detail is not None:
+                tool_calls.append("get_suppliers")
+                events.append(("tool_call", {"tool": "get_suppliers", "status": "running"}))
+                events.append(("tool_call", {"tool": "get_suppliers", "status": "done"}))
+                events.append(("citation", {"title": _detail.name, "url": _detail.url, "trust": "merchant"}))
+                intro_src = _detail.description or ""
+                events.append(
+                    (
+                        "card",
+                        {
+                            "kind": "supplier",
+                            "name": _detail.name,
+                            "region": _detail.region,
+                            "certs": list(_detail.certifications),
+                            "main_products": list(_detail.main_products),
+                            "description": intro_src,
+                            "url": _detail.url,
+                        },
+                    )
+                )
+                intro = _detail.description or "该公司档案完善中。"
+                certs = "、".join(_detail.certifications) if _detail.certifications else "认证信息完善中"
+                region = _detail.region or "地区未标注"
+                cats = "、".join(_detail.main_products[:4]) if _detail.main_products else "真空设备"
+                answer = (
+                    f"{_detail.name}（{region}｜{certs}）\n\n"
+                    f"公司简介：{intro}\n\n"
+                    f"主营：{cats}\n\n"
+                    "如需询价或了解更多，可提交询盘，供应商会主动与您联系。"
+                )
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            # 未点名公司 → 走列表
             # 供应商智能推荐：评分驱动筛选与匹配原因；呈现并列陈述（port-spec §3.2 中立性）
             tool_calls.append("get_suppliers")
             events.append(("tool_call", {"tool": "get_suppliers", "status": "running"}))
@@ -345,6 +409,20 @@ def _respond_node(deps: GraphDeps) -> Any:
                     (
                         "citation",
                         {"title": m.supplier.name, "url": m.supplier.url, "trust": "platform"},
+                    )
+                )
+                events.append(
+                    (
+                        "card",
+                        {
+                            "kind": "supplier",
+                            "name": m.supplier.name,
+                            "region": m.supplier.region,
+                            "certs": list(m.supplier.certifications),
+                            "main_products": list(m.supplier.main_products),
+                            "description": "；".join(m.reasons) if m.reasons else "按站点默认排序",
+                            "url": m.supplier.url,
+                        },
                     )
                 )
             answer = "\n".join(lines)
@@ -452,6 +530,55 @@ def _inquiry_node(deps: GraphDeps) -> Any:
         if action != "confirm_inquiry":
             answer = "已取消，本次不提交任何信息。"
             return {"route": "inquiry_flow", "answer": answer, "events": events}
+        # 行内编辑回传：resume 可携带 draft_override（quantity/contact_name/contact_phone），白名单合并
+        override = (approval or {}).get("draft_override") or {}
+        if override:
+            _q = override.get("quantity")
+            if isinstance(_q, int) and 0 < _q <= 100000:
+                draft.quantity = _q
+            _name = override.get("contact_name")
+            if isinstance(_name, str) and _name.strip():
+                contact.name = _name.strip()[:50]
+            _phone = override.get("contact_phone")
+            if isinstance(_phone, str) and _phone.strip().isdigit() and 7 <= len(_phone.strip()) <= 20:
+                contact.phone = _phone.strip()
+            _ct = contact.model_dump()
+            provided_keys = {
+                "contact_name": bool(contact.name),
+                "contact_phone": bool(contact.phone),
+            }
+            _missing = [f for f in cfg.required_fields if not provided_keys.get(f, False)]
+            if _missing:
+                names = "、".join({"contact_name": "联系人", "contact_phone": "手机号"}.get(f, f) for f in _missing)
+                events.append(
+                    (
+                        "inquiry_confirm",
+                        {
+                            "confirm_id": key[:16],
+                            "draft": {
+                                "product_id": draft.product_id,
+                                "quantity": draft.quantity,
+                                "contact_name": contact.name,
+                                "contact_phone_masked": _mask(contact.phone),
+                            },
+                        },
+                    )
+                )
+                answer = f"修改后仍缺少必填信息：{names}，请补充后再提交。"
+                return {"route": "inquiry_flow", "answer": answer, "events": events, "needs_more_info": True}
+            draft = InquiryDraft(
+                session_id=draft.session_id,
+                user_ref=draft.user_ref,
+                product_id=draft.product_id,
+                quantity=draft.quantity,
+                params=draft.params,
+                message=draft.message,
+                contact=contact,
+                lead_score=draft.lead_score,
+                ai_extract=draft.ai_extract,
+                idempotency_key=draft.idempotency_key,
+            )
+            _ = _ct  # 旧值仅用于类型完整性，不落库
         sink = deps.inquiry_sink
         if sink is None:
             events.append(("error", {"code": "PORT_DISABLED", "message": "询盘能力未启用"}))
@@ -551,6 +678,21 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
                 "human_reason": None,
                 "refusal_reason": reason,
             }
+    # 询盘意图确定性路由：0 LLM token 直达 inquiry_flow（确认卡 human-in-the-loop）
+    if message.strip() and (
+        "询盘" in message or "询价" in message or "要买" in message or "求购" in message
+    ):
+        return {
+            "intent": "inquiry_flow",
+            "confidence": 0.99,
+            "entities": {},
+            "missing_fields": [],
+            "route": "inquiry_flow",
+            "needs_clarification": False,
+            "needs_human": False,
+            "human_reason": None,
+            "refusal_reason": None,
+        }
     if message.strip() in {"", "嗯", "好的"} and state.get("action") is None:
         return {
             "intent": "unknown",

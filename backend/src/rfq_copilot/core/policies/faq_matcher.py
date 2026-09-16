@@ -82,4 +82,94 @@ def build_default_faq() -> list[FaqEntry]:
             answer="平台会员可查看更多供应商联系方式、获取优先报价、享受专属客服服务。详情请查看会员中心。",
             category="会员",
         ),
+        FaqEntry(
+            keywords=("发货时间", "多久发货", "什么时候发货"),
+            answer="发货时间以供应商确认为准。您可在询盘中注明期望交期，供应商会评估后回复。",
+            category="交易",
+        ),
+        FaqEntry(
+            keywords=("发票", "开票", "增值税"),
+            answer="发票由供应商开具，支持增值税专用/普通发票。请在询盘备注中说明开票需求。",
+            category="交易",
+        ),
+        FaqEntry(
+            keywords=("样品", "打样", "试样"),
+            answer="部分供应商支持寄样。您可以提交询盘并在需求中注明『样品申请』，供应商会与您联系确认。",
+            category="交易",
+        ),
+        FaqEntry(
+            keywords=("定制", "非标", "特殊规格"),
+            answer="支持非标定制。请提交询盘并描述工况参数（介质/温度/真空度等），供应商会评估可行性。",
+            category="交易",
+        ),
+        FaqEntry(
+            keywords=("最小起订", "起订量", "moq"),
+            answer="起订量由各供应商设定，请在询盘中注明采购数量，供应商会给出最优方案。",
+            category="交易",
+        ),
+        FaqEntry(
+            keywords=("人工客服", "联系客服", "找人工"),
+            answer="您可以扫码添加专属工程师微信一对一咨询；平台内提交询盘后供应商也会主动与您联系。",
+            category="联系",
+        ),
     ]
+
+
+class FaqRegistry:
+    """运行时可变的 FAQ 库（chatwoot canned-response 思想）：运营增删改，立即生效。
+
+    默认条目来自 build_default_faq()；运营条目可覆盖/追加；未答问题可沉淀为候选条目。
+    """
+
+    def __init__(self, entries: list[FaqEntry] | None = None) -> None:
+        self._entries: list[FaqEntry] = list(entries) if entries is not None else build_default_faq()
+        self._matcher = FaqMatcher(self._entries)
+
+    def match(self, query: str) -> tuple[str, FaqEntry] | None:
+        """命中返回 (答案, 条目)；未命中 None。"""
+        query_lower = query.lower().strip()
+        if not query_lower:
+            return None
+        for entry in self._entries:
+            for kw in entry.keywords:
+                if kw in query_lower:
+                    return entry.answer, entry
+        return None
+
+    def suggest(self, query: str, limit: int = 3) -> list[dict[str, str]]:
+        """未命中时返回最相似的条目（供"你可能想问"推荐），学习 help-center 搜索联想。"""
+        scored: list[tuple[float, FaqEntry]] = []
+        query_lower = query.lower().strip()
+        for entry in self._entries:
+            score = 0.0
+            for kw in entry.keywords:
+                if kw in query_lower:
+                    score += 1.0
+                elif any(ch in query_lower for ch in kw if ch.isalnum()):
+                    score = max(score, 0.3)
+            if score > 0:
+                scored.append((score, entry))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [
+            {"question": "、".join(entry.keywords[:3]), "answer": entry.answer, "category": entry.category}
+            for _, entry in scored[:limit]
+        ]
+
+    def add(self, keywords: list[str], answer: str, category: str = "通用") -> FaqEntry:
+        entry = FaqEntry(keywords=tuple(keywords), answer=answer, category=category)
+        self._entries.append(entry)
+        self._matcher = FaqMatcher(self._entries)
+        return entry
+
+    def remove(self, index: int) -> bool:
+        if 0 <= index < len(self._entries):
+            self._entries.pop(index)
+            self._matcher = FaqMatcher(self._entries)
+            return True
+        return False
+
+    def list(self) -> list[dict[str, str]]:
+        return [
+            {"index": str(i), "keywords": "、".join(e.keywords), "answer": e.answer, "category": e.category}
+            for i, e in enumerate(self._entries)
+        ]

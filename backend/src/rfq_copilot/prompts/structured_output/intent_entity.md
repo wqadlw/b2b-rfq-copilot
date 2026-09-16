@@ -1,6 +1,6 @@
 ---
 name: intent_entity_extraction
-version: 4
+version: 5
 locale: zh-CN
 capability: understanding
 ---
@@ -24,7 +24,7 @@ capability: understanding
    - `product_flow`：要推荐/找产品（具体产品）
    - `selection_flow`：选型建议
    - `spec_match_flow`：用户给出结构化规格参数（抽速/极限真空/无油等数值或布尔）要求匹配产品
-   - `supplier_flow`：找供应商/某类产品有哪些厂家/某地区有什么供应商（实体含 product_category 或 region）
+   - `supplier_flow`：找供应商/某类产品有哪些厂家/某地区有什么供应商/网站有几家供应商等数量统计类问题（实体含 product_category 或 region，或问句含供应商/厂家/几家/多少家）
    - `compare_flow`：用户点名两个具体产品要求对比（消息含两个产品编号/名称）
    - `knowledge_flow`：知识/政策/流程问答
    - `inquiry_flow`：要创建询盘/提交需求
