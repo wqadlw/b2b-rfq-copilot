@@ -523,7 +523,10 @@ export function ChatWidget(): ReactElement {
   );
 }
 
-/** CardStack — 卡片堆叠：≤3 全显，超出折叠"查看全部"（Shopify Sidekick 模式，不做轮播）。 */
+/** CardStack — 卡片堆叠：折叠显示 3 张，展开后分页（每页 5 张，上一页/下一页）。 */
+const CARDS_COLLAPSED = 3;
+const CARDS_PER_PAGE = 5;
+
 function CardStack({
   cards,
   expanded,
@@ -535,24 +538,53 @@ function CardStack({
   onToggle: () => void;
   onInquiry: (card: EntityCardData) => void;
 }): ReactElement {
-  const visible = expanded ? cards : cards.slice(0, 3);
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(cards.length / CARDS_PER_PAGE));
+  const safePage = Math.min(page, totalPages - 1);
+  const visible = expanded
+    ? cards.slice(safePage * CARDS_PER_PAGE, (safePage + 1) * CARDS_PER_PAGE)
+    : cards.slice(0, CARDS_COLLAPSED);
   return (
     <div className="ml-8 flex w-full flex-col gap-2">
       {visible.map((card, idx) =>
         card.kind === "product" ? (
-          <ProductCard key={idx} card={card} onInquiry={onInquiry} />
+          <ProductCard key={card.url || idx} card={card} onInquiry={onInquiry} />
         ) : (
-          <SupplierCard key={idx} card={card} />
+          <SupplierCard key={card.url || idx} card={card} />
         ),
       )}
-      {cards.length > 3 && (
-        <button
-          type="button"
-          onClick={onToggle}
-          className="self-start text-xs text-primary transition-colors hover:underline"
-        >
-          {expanded ? "收起" : `查看全部 ${cards.length} 个`}
-        </button>
+      {expanded && totalPages > 1 ? (
+        <div className="flex items-center gap-3 self-start text-xs text-muted-foreground">
+          <button
+            type="button"
+            disabled={safePage === 0}
+            onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+            className="rounded border border-border px-2 py-0.5 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            上一页
+          </button>
+          <span data-testid="card-page">
+            第 {safePage + 1} / {totalPages} 页 · 共 {cards.length} 个
+          </span>
+          <button
+            type="button"
+            disabled={safePage >= totalPages - 1}
+            onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+            className="rounded border border-border px-2 py-0.5 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            下一页
+          </button>
+        </div>
+      ) : (
+        cards.length > CARDS_COLLAPSED && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="self-start text-xs text-primary transition-colors hover:underline"
+          >
+            {expanded ? "收起" : `查看全部 ${cards.length} 个`}
+          </button>
+        )
       )}
     </div>
   );

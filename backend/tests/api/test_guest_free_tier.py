@@ -64,9 +64,12 @@ def test_looks_like_knowledge() -> None:
 def test_guest_direct_product_search(guest_client: TestClient) -> None:
     answer, events = _turn(guest_client, "g1-1", "有哪些真空泵")
     assert "login_required" not in events
-    assert "demo 设备" in answer
-    assert "citation" in events
+    # 回答形式契约：卡片承载数据，文本简短引导（不复读产品名/URL）
+    assert "为您找到" in answer
     assert "登录后" in answer  # 引导但不阻断
+    assert "citation" in events
+    assert events.count("card") >= 1
+    assert "/products/" not in answer
 
 
 def test_guest_demo_id_lookup(guest_client: TestClient) -> None:

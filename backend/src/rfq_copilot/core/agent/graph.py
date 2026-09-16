@@ -35,7 +35,7 @@ from rfq_copilot.ports.lead_distribution import LeadDistributionPort
 from rfq_copilot.ports.product_catalog import ProductCatalogPort, ProductSearchQuery
 from rfq_copilot.ports.supplier_directory import SupplierDirectoryPort, SupplierSearchQuery
 
-MAX_SEARCH_ITEMS = 3
+MAX_SEARCH_ITEMS = 10
 
 INTENT_ENUM = frozenset(
     {
@@ -76,6 +76,38 @@ VALID_ROUTES = frozenset(
     }
 )
 LEAD_SCORE_THRESHOLD = 70
+
+
+def _humanize_spec_value(spec_value: str) -> str:
+    """规格数值去尾零：'1500.00 m³/h' → '1500 m³/h'，'0.0100 Pa' → '0.01 Pa'。"""
+    text = str(spec_value).strip()
+    match = re.match(r"^([0-9]+(?:\.[0-9]+)?)(.*)$", text)
+    if not match:
+        return text
+    number, unit = match.group(1), match.group(2)
+    if "." in number:
+        number = number.rstrip("0").rstrip(".")
+    return f"{number}{unit}"
+
+
+def _product_cards_payload(items: list[Any], whitelist: set[str]) -> tuple[list[dict[str, Any]], int]:
+    """构造产品卡片事件 + 返回展示数量（含价格白名单登记）。"""
+    cards: list[dict[str, Any]] = []
+    for item in items:
+        price = item.price_display.text
+        if item.price_display.mode == "shown":
+            whitelist.add(price.strip())
+        cards.append(
+            {
+                "kind": "product",
+                "name": item.name,
+                "supplier": item.supplier_name,
+                "price": price,
+                "url": item.url,
+                "specs": {key: _humanize_spec_value(value) for key, value in list(item.specs.items())[:3]},
+            },
+        )
+    return cards, len(items)
 
 
 def _merge_lists(left: list[Any] | None, right: list[Any] | None) -> list[Any]:
@@ -287,30 +319,26 @@ def _respond_node(deps: GraphDeps) -> Any:
             events.append(("tool_call", {"tool": "search_products", "status": "running"}))
             tool_calls.append("search_products")
             keyword = select_search_keyword(message, state.get("understanding"))
-            result = await _call_tool(tools["search_products"], ProductSearchQuery(keyword=keyword))
+            result = await _call_tool(
+                tools["search_products"], ProductSearchQuery(keyword=keyword, page_size=MAX_SEARCH_ITEMS)
+            )
             events.append(("tool_call", {"tool": "search_products", "status": "done"}))
-            lines = ["为您找到以下产品（并列供参考）："]
-            for item in result.items[:MAX_SEARCH_ITEMS]:
-                specs = "；".join(f"{k}:{v}" for k, v in list(item.specs.items())[:2])
-                price = item.price_display.text
-                if item.price_display.mode == "shown":
-                    whitelist.add(price.strip())
-                lines.append(f"1. {item.name}（{item.supplier_name}）{specs}；价格：{price}。详情：{item.url}")
+            # 回答形式（ChatGPT/Perplexity 卡片模式）：数据交给卡片，文本只做简短引导，
+            # 不再逐条复读卡片内容（此前名称/供应商/参数/URL 全部重复一遍，可读性差）。
+            shown = result.items[:MAX_SEARCH_ITEMS]
+            for item in shown:
                 events.append(("citation", {"title": item.name, "url": item.url, "trust": "merchant"}))
-                events.append(
-                    (
-                        "card",
-                        {
-                            "kind": "product",
-                            "name": item.name,
-                            "supplier": item.supplier_name,
-                            "price": price,
-                            "url": item.url,
-                            "specs": dict(list(item.specs.items())[:3]),
-                        },
-                    )
+            cards, _shown_count = _product_cards_payload(shown, whitelist)
+            for card in cards:
+                events.append(("card", card))
+            if shown:
+                keyword_text = f"与「{keyword}」相关的" if keyword else ""
+                answer = (
+                    f"为您找到 {_shown_count} 款{keyword_text}产品，点击卡片可查看参数与详情。"
+                    "如需精确匹配，可告诉我目标真空度或抽速，也可以直接发起询盘。"
                 )
-            answer = "\n".join(lines) if result.items else "暂未找到匹配产品，您可以补充关键词或提交询盘。"
+            else:
+                answer = "暂未找到匹配产品，您可以换个说法（如「无油旋片泵」），或直接提交询盘让供应商来找您。"
         elif route == "knowledge_flow" and deps.rag is not None:
             tool_calls.append("search_knowledge")
             events.append(("tool_call", {"tool": "search_knowledge", "status": "running"}))

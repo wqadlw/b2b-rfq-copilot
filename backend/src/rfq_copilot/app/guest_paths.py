@@ -16,7 +16,76 @@ from rfq_copilot.core.rag.pipeline import RAGPipeline
 from rfq_copilot.ports.product_catalog import ProductCatalogPort
 
 # demo 词表（G1 触发词）——真实站点接入时由 manifest chat.free_search_keywords 配置
-DEFAULT_PRODUCT_WORDS: tuple[str, ...] = ("真空泵", "真空阀门", "真空管件", "真空计", "旋片泵", "涡旋泵", "分子泵")
+# G1 触发词表：站点官方分类核心词 ∪ 同义词表用户词（2026-09-16 导入 49 条）∪ 常见简称。
+# 词表越长覆盖越广；均为"产品词"，不会误伤供应商/厂家类提问（那些走 SUPPLIER_LIST_RE）。
+DEFAULT_PRODUCT_WORDS: tuple[str, ...] = (
+    # 官方分类核心词
+    "真空泵",
+    "真空机组",
+    "真空系统",
+    "真空阀门",
+    "真空管件",
+    "真空法兰",
+    "密封圈",
+    "波纹管",
+    "观察窗",
+    "真空计",
+    "规管",
+    "检漏仪",
+    "残余气体分析仪",
+    "真空泵油",
+    "扩散泵油",
+    "真空硅脂",
+    "冷水机",
+    "干燥过滤器",
+    "真空泵维修",
+    "保养服务",
+    "真空配件",
+    # 泵型（官方分类 + 口语简称 + 写法变体）
+    "旋片泵",
+    "旋片真空泵",
+    "旋片式真空泵",
+    "螺杆泵",
+    "螺杆真空泵",
+    "螺杆式真空泵",
+    "罗茨泵",
+    "罗茨真空泵",
+    "罗茨式真空泵",
+    "水环泵",
+    "水环真空泵",
+    "水环式真空泵",
+    "液环泵",
+    "液环真空泵",
+    "分子泵",
+    "涡轮分子泵",
+    "涡轮泵",
+    "涡旋泵",
+    "涡旋真空泵",
+    "涡旋式真空泵",
+    "扩散泵",
+    "油扩散泵",
+    "干泵",
+    "干式泵",
+    "干式螺杆泵",
+    "干式涡旋泵",
+    "油泵",
+    # 机组
+    "泵组",
+    "真空泵组",
+    "罗茨旋片机组",
+    "罗茨螺杆机组",
+    "罗茨水环机组",
+    # 其他高频词
+    "无油真空泵",
+    "无油泵",
+    "真空泵油雾过滤器",
+    "胶圈",
+    "O型圈",
+    "硅脂",
+    "法兰盘",
+    "维修服务",
+    "真空规",
+)
 DEMO_ID_RE = re.compile(r"demo-p-\d+")
 
 
@@ -25,9 +94,9 @@ def detect_guest_query(message: str) -> str:
     text = message.strip()
     if DEMO_ID_RE.search(text):
         return DEMO_ID_RE.search(text).group(0)  # type: ignore[union-attr]
-    for word in DEFAULT_PRODUCT_WORDS:
-        if word in text:
-            return word
+    hits = [word for word in DEFAULT_PRODUCT_WORDS if word in text]
+    if hits:
+        return max(hits, key=len)  # 最长命中优先：'螺杆真空泵' 不被 '真空泵' 短词截胡
     return ""
 
 
@@ -192,10 +261,10 @@ async def guest_search_answer(query: str, catalog: ProductCatalogPort | None, ma
             "events": events,
             "finish": "answered",
         }
-    lines = [f"为您找到 {len(result.items)} 件相关产品（游客可浏览，登录后可深度咨询与创建询盘）："]
-    for i, item in enumerate(result.items[:3], start=1):
+    # 回答形式与 graph 产品流对齐：数据交给卡片（最多 10 张，前端分页），文本只做简短引导
+    shown = list(result.items[:10])
+    for item in shown:
         price = item.price_display.text if item.price_display.mode == "shown" else "请联系供应商询价"
-        lines.append(f"{i}. {item.name}（{item.supplier_name}）｜{price}")
         events.append(("citation", {"title": item.name, "url": item.url, "trust": "merchant"}))
         events.append(
             (
@@ -210,8 +279,11 @@ async def guest_search_answer(query: str, catalog: ProductCatalogPort | None, ma
                 },
             )
         )
-    lines.append("登录后可查看参数对比、规格匹配与供应商推荐。")
-    return {"answer": "\n".join(lines), "events": events, "finish": "answered"}
+    answer = (
+        f"为您找到 {len(result.items)} 款相关产品，点击卡片可查看参数与详情。"
+        "登录后可对比参数、匹配供应商并创建询盘；也可以直接发起询盘。"
+    )
+    return {"answer": answer, "events": events, "finish": "answered"}
 
 
 async def guest_knowledge_answer(message: str, rag: RAGPipeline | None, manifest: Manifest) -> dict[str, Any] | None:
