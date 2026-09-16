@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "build:widget": "vite build --config vite.config.widget.ts",
     "lint": "eslint src",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts"
   },
   "dependencies": {
     "@microsoft/fetch-event-source": "^2.0.1",
@@ -31,6 +33,7 @@
     "tailwindcss": "^4.0.0",
     "typescript": "~5.6.3",
     "typescript-eslint": "^8.18.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^3.2.7"
   }
 }

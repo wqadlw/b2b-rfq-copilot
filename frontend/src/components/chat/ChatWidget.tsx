@@ -18,6 +18,7 @@ import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
 import { cn } from "../../lib/utils";
+import { createInquiryCardState, inquiryReducer } from "../../lib/inquiryReducer";
 import type { ChatMessage, UiConfig } from "../../lib/types";
 
 const NEAR_BOTTOM_PX = 80;
@@ -35,9 +36,7 @@ const DEMO_PRODUCT_NAMES: Record<string, string> = {
 };
 
 interface PendingConfirm {
-  confirmId: string;
-  phase: "editing" | "submitting" | "sent" | "error";
-  inquiryId?: string;
+  card: import("../../lib/inquiryReducer").InquiryCardState;
   draft: {
     product_id?: string | number | null;
     quantity?: number | null;
@@ -169,7 +168,7 @@ export function ChatWidget(): ReactElement {
     }
     if (action === "confirm_inquiry") {
       setMessages((prev) => [...prev, { role: "user", content: "确认提交询盘" }]);
-      setPendingConfirm((prev) => (prev ? { ...prev, phase: "submitting" } : prev));
+      setPendingConfirm((prev) => (prev ? { ...prev, card: inquiryReducer(prev.card, { type: "CONFIRM" }) } : prev));
     } else if (action === "cancel_inquiry") {
       setMessages((prev) => [...prev, { role: "user", content: "取消提交询盘" }]);
       setPendingConfirm(null);
@@ -222,10 +221,15 @@ export function ChatWidget(): ReactElement {
               return [...prev.slice(0, -1), { ...last, cards: list }];
             });
           } else if (name === "inquiry_confirm") {
-            setPendingConfirm({ confirmId: data.confirm_id ?? "", draft: data.draft ?? {}, phase: "editing" });
+            setPendingConfirm({ card: createInquiryCardState(data.confirm_id ?? ""), draft: data.draft ?? {} });
           } else if (name === "inquiry_created") {
             setPendingConfirm((prev) =>
-              prev ? { ...prev, phase: "sent", inquiryId: String(data.inquiry_id ?? "") } : prev,
+              prev
+                ? {
+                    ...prev,
+                    card: inquiryReducer(prev.card, { type: "CREATED", inquiryId: String(data.inquiry_id ?? "") }),
+                  }
+                : prev,
             );
             updateLast({ inquiryCreated: true });
           } else if (name === "wechat_guidance") {
@@ -242,7 +246,9 @@ export function ChatWidget(): ReactElement {
             updateLast({ loginRequired: false });
           } else if (name === "error") {
             updateLast({ error: true });
-            setPendingConfirm((prev) => (prev && prev.phase === "submitting" ? { ...prev, phase: "error" } : prev));
+            setPendingConfirm((prev) =>
+              prev ? { ...prev, card: inquiryReducer(prev.card, { type: "SUBMIT_ERROR" }) } : prev,
+            );
           }
         },
       });
@@ -250,7 +256,9 @@ export function ChatWidget(): ReactElement {
       // ai-chatbot 模式：出错不清输入，用户可直接改后重试
       setInput(message || lastUserMessage.current);
       if (action === "confirm_inquiry") {
-        setPendingConfirm((prev) => (prev && prev.phase === "submitting" ? { ...prev, phase: "error" } : prev));
+        setPendingConfirm((prev) =>
+          prev ? { ...prev, card: inquiryReducer(prev.card, { type: "SUBMIT_ERROR" }) } : prev,
+        );
       }
       if (controller.signal.aborted) {
         updateLast({ content: "已停止生成。", statusLine: undefined });
@@ -358,19 +366,19 @@ export function ChatWidget(): ReactElement {
           <div
             className={cn(
               "rfq-fade-in ml-auto w-[88%] rounded-xl border p-3 transition-colors",
-              pendingConfirm.phase === "sent"
+              pendingConfirm.card.phase === "sent"
                 ? "border-success/50 bg-success/5"
-                : pendingConfirm.phase === "error"
+                : pendingConfirm.card.phase === "error"
                   ? "border-danger/50 bg-danger/5"
                   : "border-warning/60 bg-warning/10",
             )}
           >
-            {pendingConfirm.phase === "sent" ? (
+            {pendingConfirm.card.phase === "sent" ? (
               <p className="flex items-center gap-1.5 text-sm font-semibold text-success">
                 <CheckCircle2 className="h-4 w-4" />
-                询盘已发送{pendingConfirm.inquiryId ? ` · 编号 ${pendingConfirm.inquiryId}` : ""}
+                询盘已发送{pendingConfirm.card.inquiryId ? ` · 编号 ${pendingConfirm.card.inquiryId}` : ""}
               </p>
-            ) : pendingConfirm.phase === "error" ? (
+            ) : pendingConfirm.card.phase === "error" ? (
               <p className="flex items-center gap-1.5 text-sm font-semibold text-danger">
                 <AlertCircle className="h-4 w-4" />
                 提交失败，请重试
@@ -392,7 +400,7 @@ export function ChatWidget(): ReactElement {
                 <div>电话：{pendingConfirm.draft.contact_phone_masked}</div>
               )}
             </dl>
-            {pendingConfirm.phase === "editing" && (
+            {pendingConfirm.card.phase === "editing" && (
               <>
                 <p className="mt-1.5 text-[11px] text-ink-muted">提交后将进入供应商报价流程，请核对以上信息。</p>
                 <div className="mt-2.5 flex gap-2">
@@ -405,7 +413,7 @@ export function ChatWidget(): ReactElement {
                 </div>
               </>
             )}
-            {pendingConfirm.phase === "submitting" && (
+            {pendingConfirm.card.phase === "submitting" && (
               <div className="mt-2.5">
                 <Button size="sm" disabled>
                   <Loader2 className="mr-1 h-3 w-3 animate-spin" />
@@ -413,12 +421,12 @@ export function ChatWidget(): ReactElement {
                 </Button>
               </div>
             )}
-            {pendingConfirm.phase === "sent" && (
+            {pendingConfirm.card.phase === "sent" && (
               <p className="mt-1.5 text-[11px] text-ink-muted">
                 供应商将在 24 小时内回复；可添加微信工程师补充资料。
               </p>
             )}
-            {pendingConfirm.phase === "error" && (
+            {pendingConfirm.card.phase === "error" && (
               <div className="mt-2.5">
                 <Button size="sm" onClick={() => void send("", "confirm_inquiry")}>
                   重试发送
