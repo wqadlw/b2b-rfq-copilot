@@ -26,7 +26,13 @@ function certIcon(c: string): ReactElement {
   return <BadgeCheck className="h-3 w-3 text-warning shrink-0" />;
 }
 
-export function ProductCard({ card }: { card: EntityCardData }): ReactElement {
+export function ProductCard({
+  card,
+  onInquiry,
+}: {
+  card: EntityCardData;
+  onInquiry?: (card: EntityCardData) => void;
+}): ReactElement {
   const specs = Object.entries(card.specs ?? {}).slice(0, 3);
   return (
     <div className="rfq-fade-in w-full max-w-[88%] self-start overflow-hidden rounded-xl border border-line bg-surface transition-shadow hover:shadow-md">
@@ -59,17 +65,28 @@ export function ProductCard({ card }: { card: EntityCardData }): ReactElement {
       </div>
       <div className="flex items-center justify-between border-t border-line bg-background/60 px-3 py-2">
         <span className="text-[11px] text-ink-muted">参数与货期以供应商确认为准</span>
-        {card.url && (
-          <a
-            href={card.url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-0.5 rounded-md border border-primary/40 px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary-light"
-          >
-            查看详情
-            <ArrowUpRight className="h-3 w-3" />
-          </a>
-        )}
+        <div className="flex items-center gap-1.5">
+          {onInquiry && (
+            <button
+              type="button"
+              onClick={() => onInquiry(card)}
+              className="rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-primary-hover active:scale-95"
+            >
+              发起询盘
+            </button>
+          )}
+          {card.url && (
+            <a
+              href={card.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-0.5 rounded-md border border-primary/40 px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary-light"
+            >
+              查看详情
+              <ArrowUpRight className="h-3 w-3" />
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );

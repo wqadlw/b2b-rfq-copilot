@@ -10,13 +10,14 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { SendHorizonal, Sparkles, Square } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, SendHorizonal, Sparkles, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
 import { ProductCard, SupplierCard, type EntityCardData } from "./EntityCard";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
+import { cn } from "../../lib/utils";
 import type { ChatMessage, UiConfig } from "../../lib/types";
 
 const NEAR_BOTTOM_PX = 80;
@@ -35,6 +36,8 @@ const DEMO_PRODUCT_NAMES: Record<string, string> = {
 
 interface PendingConfirm {
   confirmId: string;
+  phase: "editing" | "submitting" | "sent" | "error";
+  inquiryId?: string;
   draft: {
     product_id?: string | number | null;
     quantity?: number | null;
@@ -58,6 +61,7 @@ export function ChatWidget(): ReactElement {
   const stickToBottom = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
   const lastUserMessage = useRef<string>("");
+  const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     void (async () => {
@@ -156,10 +160,19 @@ export function ChatWidget(): ReactElement {
         return;
       }
     }
-    setPendingConfirm(null);
+    if (!action) {
+      setPendingConfirm(null);
+    }
     if (message) {
       lastUserMessage.current = message;
       setMessages((prev) => [...prev, { role: "user", content: message }]);
+    }
+    if (action === "confirm_inquiry") {
+      setMessages((prev) => [...prev, { role: "user", content: "确认提交询盘" }]);
+      setPendingConfirm((prev) => (prev ? { ...prev, phase: "submitting" } : prev));
+    } else if (action === "cancel_inquiry") {
+      setMessages((prev) => [...prev, { role: "user", content: "取消提交询盘" }]);
+      setPendingConfirm(null);
     }
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
     const controller = new AbortController();
@@ -209,9 +222,11 @@ export function ChatWidget(): ReactElement {
               return [...prev.slice(0, -1), { ...last, cards: list }];
             });
           } else if (name === "inquiry_confirm") {
-            setPendingConfirm({ confirmId: data.confirm_id ?? "", draft: data.draft ?? {} });
+            setPendingConfirm({ confirmId: data.confirm_id ?? "", draft: data.draft ?? {}, phase: "editing" });
           } else if (name === "inquiry_created") {
-            setPendingConfirm(null);
+            setPendingConfirm((prev) =>
+              prev ? { ...prev, phase: "sent", inquiryId: String(data.inquiry_id ?? "") } : prev,
+            );
             updateLast({ inquiryCreated: true });
           } else if (name === "wechat_guidance") {
             updateLast({
@@ -227,12 +242,16 @@ export function ChatWidget(): ReactElement {
             updateLast({ loginRequired: false });
           } else if (name === "error") {
             updateLast({ error: true });
+            setPendingConfirm((prev) => (prev && prev.phase === "submitting" ? { ...prev, phase: "error" } : prev));
           }
         },
       });
     } catch {
       // ai-chatbot 模式：出错不清输入，用户可直接改后重试
       setInput(message || lastUserMessage.current);
+      if (action === "confirm_inquiry") {
+        setPendingConfirm((prev) => (prev && prev.phase === "submitting" ? { ...prev, phase: "error" } : prev));
+      }
       if (controller.signal.aborted) {
         updateLast({ content: "已停止生成。", statusLine: undefined });
       } else {
@@ -317,15 +336,12 @@ export function ChatWidget(): ReactElement {
               </div>
             )}
             {message.cards && message.cards.length > 0 && (
-              <div className="ml-8 flex w-full flex-col gap-2">
-                {message.cards.map((card, idx) =>
-                  card.kind === "product" ? (
-                    <ProductCard key={idx} card={card} />
-                  ) : (
-                    <SupplierCard key={idx} card={card} />
-                  ),
-                )}
-              </div>
+              <CardStack
+                cards={message.cards}
+                expanded={!!expandedCards[index]}
+                onToggle={() => setExpandedCards((prev) => ({ ...prev, [index]: !prev[index] }))}
+                onInquiry={(card) => void send(`我要询盘：${card.name}`)}
+              />
             )}
             {message.error && lastUserMessage.current !== "" && (
               <button
@@ -339,8 +355,29 @@ export function ChatWidget(): ReactElement {
           </div>
         ))}
         {pendingConfirm && (
-          <div className="rfq-fade-in ml-auto w-[88%] rounded-xl border border-warning/60 bg-warning/10 p-3">
-            <p className="text-sm font-semibold text-ink">确认提交询盘</p>
+          <div
+            className={cn(
+              "rfq-fade-in ml-auto w-[88%] rounded-xl border p-3 transition-colors",
+              pendingConfirm.phase === "sent"
+                ? "border-success/50 bg-success/5"
+                : pendingConfirm.phase === "error"
+                  ? "border-danger/50 bg-danger/5"
+                  : "border-warning/60 bg-warning/10",
+            )}
+          >
+            {pendingConfirm.phase === "sent" ? (
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-success">
+                <CheckCircle2 className="h-4 w-4" />
+                询盘已发送{pendingConfirm.inquiryId ? ` · 编号 ${pendingConfirm.inquiryId}` : ""}
+              </p>
+            ) : pendingConfirm.phase === "error" ? (
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-danger">
+                <AlertCircle className="h-4 w-4" />
+                提交失败，请重试
+              </p>
+            ) : (
+              <p className="text-sm font-semibold text-ink">确认提交询盘</p>
+            )}
             <dl className="mt-1.5 space-y-0.5 text-xs text-ink-secondary">
               {pendingConfirm.draft.product_id !== undefined && pendingConfirm.draft.product_id !== null && (
                 <div>产品：{productName(pendingConfirm.draft.product_id)}</div>
@@ -355,15 +392,39 @@ export function ChatWidget(): ReactElement {
                 <div>电话：{pendingConfirm.draft.contact_phone_masked}</div>
               )}
             </dl>
-            <p className="mt-1.5 text-[11px] text-ink-muted">提交后将进入供应商报价流程，请核对以上信息。</p>
-            <div className="mt-2.5 flex gap-2">
-              <Button size="sm" onClick={() => void send("", "confirm_inquiry")}>
-                确认提交
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => void send("", "cancel_inquiry")}>
-                取消
-              </Button>
-            </div>
+            {pendingConfirm.phase === "editing" && (
+              <>
+                <p className="mt-1.5 text-[11px] text-ink-muted">提交后将进入供应商报价流程，请核对以上信息。</p>
+                <div className="mt-2.5 flex gap-2">
+                  <Button size="sm" onClick={() => void send("", "confirm_inquiry")}>
+                    确认提交
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => void send("", "cancel_inquiry")}>
+                    取消
+                  </Button>
+                </div>
+              </>
+            )}
+            {pendingConfirm.phase === "submitting" && (
+              <div className="mt-2.5">
+                <Button size="sm" disabled>
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  提交中…
+                </Button>
+              </div>
+            )}
+            {pendingConfirm.phase === "sent" && (
+              <p className="mt-1.5 text-[11px] text-ink-muted">
+                供应商将在 24 小时内回复；可添加微信工程师补充资料。
+              </p>
+            )}
+            {pendingConfirm.phase === "error" && (
+              <div className="mt-2.5">
+                <Button size="sm" onClick={() => void send("", "confirm_inquiry")}>
+                  重试发送
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -399,7 +460,7 @@ export function ChatWidget(): ReactElement {
             }}
             onKeyDown={onKeyDown}
             placeholder={busy ? "对方正在输入…" : "描述您的采购需求，如：找一台无油真空泵…"}
-            className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-14 text-base focus:outline-none focus:ring-2 focus:ring-primary sm:text-sm"
           />
           {busy ? (
             <button
@@ -425,6 +486,41 @@ export function ChatWidget(): ReactElement {
       <p className="pb-2 text-center text-[11px] text-ink-muted">
         内容由 AI 生成 · 价格与货期以供应商确认为准
       </p>
+    </div>
+  );
+}
+
+/** CardStack — 卡片堆叠：≤3 全显，超出折叠"查看全部"（Shopify Sidekick 模式，不做轮播）。 */
+function CardStack({
+  cards,
+  expanded,
+  onToggle,
+  onInquiry,
+}: {
+  cards: EntityCardData[];
+  expanded: boolean;
+  onToggle: () => void;
+  onInquiry: (card: EntityCardData) => void;
+}): ReactElement {
+  const visible = expanded ? cards : cards.slice(0, 3);
+  return (
+    <div className="ml-8 flex w-full flex-col gap-2">
+      {visible.map((card, idx) =>
+        card.kind === "product" ? (
+          <ProductCard key={idx} card={card} onInquiry={onInquiry} />
+        ) : (
+          <SupplierCard key={idx} card={card} />
+        ),
+      )}
+      {cards.length > 3 && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="self-start text-xs text-primary transition-colors hover:underline"
+        >
+          {expanded ? "收起" : `查看全部 ${cards.length} 个`}
+        </button>
+      )}
     </div>
   );
 }

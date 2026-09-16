@@ -2,7 +2,7 @@
  *  role 决定布局方向与容器；AI 侧带头像点与状态行；用户侧主色气泡。
  *  助手消息完成后带操作行（复制/👍/👎，P0 打磨）。 */
 
-import { useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { Check, Copy, MessageCircle, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { cn } from "../../lib/utils";
@@ -31,6 +31,20 @@ export function MessageBubble({
 
   return (
     <div className={cn("rfq-fade-in flex w-full flex-col gap-1", isUser ? "items-end" : "items-start")}>
+      {!isUser && streaming && !message.statusLine && !message.content && (
+        <div className="flex items-center gap-1.5 text-xs text-ink-muted">
+          <span className="inline-flex gap-0.5">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="h-1 w-1 animate-bounce rounded-full bg-ink-muted"
+                style={{ animationDelay: `${i * 150}ms` }}
+              />
+            ))}
+          </span>
+          <ThinkingPhrase />
+        </div>
+      )}
       {message.statusLine && (
         <div className="flex items-center gap-1.5 text-xs text-ink-muted">
           <span className="inline-flex gap-0.5">
@@ -155,4 +169,16 @@ function Caret(): ReactElement {
   return (
     <span className="inline-block h-4 w-0.5 animate-pulse bg-primary align-middle" aria-hidden />
   );
+}
+
+/** ThinkingPhrase — 首 token 前的动态短语轮换（ChatGPT/Claude 两阶段流式模式）。 */
+const THINKING_PHRASES = ["正在检索产品库…", "正在核对供应商资质…", "正在整理答案…"];
+
+function ThinkingPhrase(): ReactElement {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setIdx((i) => (i + 1) % THINKING_PHRASES.length), 1200);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <span>{THINKING_PHRASES[idx]}</span>;
 }
