@@ -1,8 +1,12 @@
-# -*- coding: utf-8 -*-
 """ZZK 供应商目录 v3：处理两种块形态（多行字段块 + 单行压缩块）。"""
-from pathlib import Path
+
 import json
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rfq_copilot.ports.supplier_directory import SupplierDetail
+from pathlib import Path
 
 from rfq_copilot.ports.supplier_directory import (
     SupplierDirectoryPort,
@@ -48,8 +52,7 @@ class ZzkSupplierDirectory(SupplierDirectoryPort):
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
         names: dict[str, None] = {}
         for doc in payload.get("documents", []):
-            m = re.search(r"供应商（", doc.get("content", ""))
-            for hit in re.findall(r"- ([^（]+)（", doc.get("content", "")):
+            for hit in re.findall(r"- ([^（]+)（", str(doc.get("content", ""))):
                 names.setdefault(hit.strip(), None)
         for i, name in enumerate(names, start=1):
             self._suppliers.append(
@@ -136,7 +139,7 @@ class ZzkSupplierDirectory(SupplierDirectoryPort):
             hits = list(self._suppliers)
         return SupplierSearchResult(items=hits[: query.page_size], total=len(hits))
 
-    async def get_detail(self, supplier_id: str):
+    async def get_detail(self, supplier_id: str) -> "SupplierDetail | None":  # -> SupplierDetail | None
         from rfq_copilot.ports.supplier_directory import SupplierDetail
 
         summary = next((s for s in self._suppliers if s.id == supplier_id), None)

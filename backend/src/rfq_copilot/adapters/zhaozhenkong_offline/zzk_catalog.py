@@ -56,15 +56,12 @@ class ZzkProductCatalog(ProductCatalogPort):
         by_product: dict[str, list[dict[str, Any]]] = {}
         for doc in docs:
             doc_id = str(doc.get("doc_id", ""))
-            if doc_id.startswith("zzk-product-") and "(1/" not in doc_id[: -len(doc_id.split("(")[-1]) if "(" in doc_id else 0]:
-                pass
             base = doc_id.split(" (")[0]
             by_product.setdefault(base, []).append(doc)
 
         for base_id, group in by_product.items():
             content_full = "\n".join(d["content"] for d in group)
             first = group[0]
-            meta = first.get("metadata") or {}
             product_id = base_id.replace("zzk-product-", "")
             name = first.get("title", "")
             # 从正文提取字段（导出时已结构化写入）
@@ -76,9 +73,7 @@ class ZzkProductCatalog(ProductCatalogPort):
             supplier_name = fields.get("供应商", "找真空供应商")
             price_line = fields.get("价格", "请联系供应商询价")
             price_mode = "shown" if price_line.startswith("￥") or price_line.startswith("¥") else "contact"
-            params = {
-                k: v for k, v in fields.items() if k not in {"产品名称", "价格", "详情"} and v
-            }
+            params = {k: v for k, v in fields.items() if k not in {"产品名称", "价格", "详情"} and v}
             self._products.append(
                 ProductDetail(
                     id=product_id,
