@@ -17,6 +17,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
 from rfq_copilot.core.agent.llm import LLMClient
+from rfq_copilot.core.agent.routing_guards import apply_routing_guards, select_search_keyword
 from rfq_copilot.core.manifest import Manifest
 from rfq_copilot.core.memory import SessionStore
 from rfq_copilot.core.policies.faq_matcher import FaqMatcher
@@ -285,7 +286,8 @@ def _respond_node(deps: GraphDeps) -> Any:
         elif route in {"product_flow", "selection_flow"} and "search_products" in tools:
             events.append(("tool_call", {"tool": "search_products", "status": "running"}))
             tool_calls.append("search_products")
-            result = await _call_tool(tools["search_products"], ProductSearchQuery(keyword=message[:40]))
+            keyword = select_search_keyword(message, state.get("understanding"))
+            result = await _call_tool(tools["search_products"], ProductSearchQuery(keyword=keyword))
             events.append(("tool_call", {"tool": "search_products", "status": "done"}))
             lines = ["为您找到以下产品（并列供参考）："]
             for item in result.items[:MAX_SEARCH_ITEMS]:
@@ -642,6 +644,10 @@ def _understand_node(deps: GraphDeps) -> Any:
                 deps.store.merge_entities(state["session_id"], u["entities"])
                 u["entities"] = deps.store.merged_entities(state["session_id"])
         else:
+            events.append(("status", {"message": "正在整理回答"}))
+        # 确定性护栏：修正分类器在产品问法/供应商问法之间的摇摆（见 routing_guards 模块）
+        u = apply_routing_guards(state.get("message", ""), u)
+        if u.get("route_guard"):
             events.append(("status", {"message": "正在整理回答"}))
         return {"understanding": u, "route": str(u["route"]), "events": events}
 

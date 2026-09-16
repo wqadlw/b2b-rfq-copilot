@@ -1,6 +1,8 @@
 """CI gate: deterministic execution of the committed eval case store.
 
-Runs every case marked ``"ci": true`` plus the derived B family (fabrication attacks)
+Runs every case marked ``"ci": true`` plus the derived B family (fabrication attacks).
+Cases may pin the classifier output via ``scripted_understanding`` so post-LLM
+deterministic behaviour (routing guards) is covered in CI too.
 against the real graph with an empty-script FakeLLM. A ci case that needs the model
 fails loudly ("FakeLLM exhausted") — that is the signal it does not belong in CI.
 
@@ -82,7 +84,10 @@ async def test_case_passes_on_deterministic_path(case: dict[str, Any]) -> None:
         "belong to scripts/run_eval.py --live"
     )
 
-    deps, ports = make_deps()
+    # 用例可携带 scripted_understanding：把"分类器输出"固定下来，
+    # 从而让路由护栏这类"LLM 之后"的行为也能被 CI 确定性锁定。
+    scripted = [case["scripted_understanding"]] if case.get("scripted_understanding") else None
+    deps, ports = make_deps(scripted=scripted)
     graph = build_graph(deps)
     try:
         final = await graph.ainvoke(
