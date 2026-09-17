@@ -11,11 +11,14 @@ export async function fetchUiConfig(): Promise<UiConfig> {
   return (await res.json()) as UiConfig;
 }
 
-export async function createSession(userRef: string | null = null): Promise<string> {
+export async function createSession(
+  userRef: string | null = null,
+  aiTicket: string | null = null,
+): Promise<string> {
   const res = await fetch(`${ENDPOINT}/api/v1/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_ref: userRef }),
+    body: JSON.stringify({ user_ref: userRef, ai_ticket: aiTicket }),
   });
   if (!res.ok) throw new Error(`sessions ${res.status}`);
   const data = (await res.json()) as { session_id: string };
