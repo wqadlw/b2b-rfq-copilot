@@ -81,7 +81,24 @@ export function ChatWidget({
 
   useEffect(() => {
     void (async () => {
-      const cfg = await fetchUiConfig();
+      // 审查修复：ui-config 拉取失败（宿主未配 endpoint/后端抖动）时用内置兜底，
+      // 保证聊天面板（含输入框）永不空白——这是嵌入态的容错底线。
+      let cfg: UiConfig;
+      try {
+        cfg = await fetchUiConfig();
+      } catch {
+        cfg = {
+          adapter: "fallback",
+          display_name: "AI 采购助手",
+          chat: {
+            welcome_message: "您好，我是找真空 AI 采购助手。可以帮您找产品、查方案、发起询盘。",
+            suggested_questions: ["真空泵有哪些？", "食品加工有什么解决方案", "半导体行业有没有案例"],
+          },
+          theme: { primary: null },
+          capabilities: {},
+          inquiry: { guest_allowed: true },
+        } as unknown as UiConfig;
+      }
       setConfig(cfg);
       // localStorage 恢复（刷新不丢消息）
       const saved = localStorage.getItem("rfq-messages");
