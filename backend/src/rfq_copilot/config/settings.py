@@ -43,7 +43,9 @@ class Settings(BaseSettings):
     # single-node: interrupt()/resume state survives a restart; M1+ default candidate).
     checkpointer_backend: str = "memory"
     checkpointer_sqlite_path: str = ".data/checkpoints.sqlite"
-    checkpointer_postgres_dsn: str = ""  # postgresql://user:pass@host:5432/db（postgres 后端必填）
+    checkpointer_postgres_dsn: str = ""
+    ai_ticket_secret: str = ""  # E1 鉴权桥：与找真空 .env 的 AI_TICKET_SECRET 同值；空=不验签（向后兼容）
+    # postgresql://user:***@host:5432/db（postgres 后端必填）
 
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""

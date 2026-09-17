@@ -35,6 +35,7 @@ from rfq_copilot.app.runtime import (
 )
 from rfq_copilot.app.sse_mapper import map_graph_stream
 from rfq_copilot.config.settings import get_settings
+from rfq_copilot.core.auth.ticket import verify_ticket
 from rfq_copilot.schemas.chat import (
     ChatRequest,
     FeedbackRequest,
@@ -48,6 +49,29 @@ from rfq_copilot.schemas.events import sse_text
 _RUNTIME: Runtime | None = None
 _LIMITER = SlidingWindowLimiter()
 _BUDGET = DailyTokenBudget(get_settings().llm_daily_token_budget)
+
+
+def _resolve_user_ref(
+    raw_user_ref: str | None,
+    ai_ticket: str | None,
+    *,
+    secret: str,
+) -> tuple[str | None, str | None]:
+    """E1 鉴权桥：ai_ticket 验签通过才信任 user_ref；否则视为游客。
+
+    返回 (user_ref, reason)。secret 未配置（本地开发）时保留旧行为——
+    裸 user_ref 仍生效（向后兼容，生产必须配置 AI_TICKET_SECRET）。
+    """
+    if raw_user_ref and ai_ticket:
+        if not secret:
+            return raw_user_ref, None  # 未启用鉴权桥：向后兼容
+        result = verify_ticket(ai_ticket, secret)
+        if result.ok and result.user_id == raw_user_ref:
+            return raw_user_ref, None
+        return None, result.reason
+    if raw_user_ref and secret:
+        return None, "ticket_required"  # 启用鉴权桥后，裸 user_ref 一律降级
+    return raw_user_ref, None
 
 
 def get_runtime() -> Runtime:
@@ -108,13 +132,17 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/sessions", response_model=SessionCreateResponse)
     async def create_session(body: SessionCreateRequest) -> SessionCreateResponse:
         rt = get_runtime()
+        user_ref, _reason = _resolve_user_ref(body.user_ref, body.ai_ticket, secret=get_settings().ai_ticket_secret)
         session_id = f"sess_{uuid.uuid4().hex[:12]}"
-        rt.store.get_or_create(session_id, user_ref=body.user_ref)
+        rt.store.get_or_create(session_id, user_ref=user_ref)
         return SessionCreateResponse(session_id=session_id, token=f"tok_{uuid.uuid4().hex[:8]}")
 
     @app.post("/api/v1/chat/stream")
     async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
         rt = get_runtime()
+        body.user_ref, _ticket_reason = _resolve_user_ref(
+            body.user_ref, body.ai_ticket, secret=get_settings().ai_ticket_secret
+        )
         if not _LIMITER.allow(session_id=body.session_id, ip=request.client.host if request.client else None):
 
             async def _limited() -> AsyncIterator[str]:

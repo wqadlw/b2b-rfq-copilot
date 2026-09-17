@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
     product_id: str | None = None
     visitor_id: str | None = None
     user_ref: str | None = None
+    ai_ticket: str | None = None  # 宿主站点签发的身份票据（E1 鉴权桥）
     contact: ContactInput | None = None
     quantity: int | None = None
     action: Literal["confirm_inquiry", "cancel_inquiry"] | None = None
@@ -31,6 +32,7 @@ class SessionCreateRequest(BaseModel):
     category_id: str | None = None
     visitor_id: str | None = None
     user_ref: str | None = None
+    ai_ticket: str | None = None  # 宿主站点签发的身份票据（E1 鉴权桥）
 
 
 class SessionCreateResponse(BaseModel):
