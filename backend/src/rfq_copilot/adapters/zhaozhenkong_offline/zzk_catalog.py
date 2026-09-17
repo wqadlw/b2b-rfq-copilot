@@ -15,6 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from rfq_copilot.adapters.zhaozhenkong_offline.search_meta import SearchMeta
 from rfq_copilot.ports.product_catalog import (
     PriceDisplay,
     ProductCatalogPort,
@@ -45,7 +46,12 @@ class ZzkProductCatalog(ProductCatalogPort):
     def __init__(self, data_dir: str | None = None) -> None:
         self._data_dir = Path(data_dir or DEFAULT_DATA_DIR)
         self._products: list[ProductDetail] = []
+        self._meta = SearchMeta.load(self._data_dir)  # 同义词/屏蔽词（缺失即退化为空）
         self._load()
+
+    @property
+    def search_meta(self) -> SearchMeta:
+        return self._meta
 
     def _load(self) -> None:
         payload_path = self._data_dir / "zzk_knowledge.json"
@@ -100,8 +106,12 @@ class ZzkProductCatalog(ProductCatalogPort):
 
     async def search(self, query: ProductSearchQuery) -> ProductSearchResult:
         kw = query.keyword.strip()
+        if kw and self._meta.is_blocked(kw):
+            # 站点语义：屏蔽词命中直接空结果（SearchService::isBlocked）
+            return ProductSearchResult(items=[], total=0)
         if kw:
-            terms = _zh_terms(kw)
+            kw = self._meta.apply_query_synonym(kw)  # 站点语义：整串同义词替换
+            terms = _zh_terms(kw) | self._meta.expand_terms(kw)  # 增强：分词级 OR 扩召回
             hits = [
                 p
                 for p in self._products

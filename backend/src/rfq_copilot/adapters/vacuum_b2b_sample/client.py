@@ -15,6 +15,7 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait
 from rfq_copilot.ports.errors import (
     PortTimeoutError,
     UpstreamAuthError,
+    UpstreamInvalidResponseError,
     UpstreamUnavailableError,
 )
 
@@ -85,8 +86,25 @@ class VacuumInternalClient:
             raise UpstreamUnavailableError(f"unexpected status {resp.status_code}: {path}")
         return resp.json()
 
-    async def post_json(self, path: str, body: dict[str, Any]) -> Any:
-        resp = await self._request("POST", path, json_body=body)
-        if resp.status_code != 201:
+    async def get_json_with_params(self, path: str, params: dict[str, Any]) -> Any:
+        """GET with query params that treats 404 as empty result (status queries)."""
+        resp = await self._request("GET", path, params=params)
+        if resp.status_code == 404:
+            return {"items": [], "total": 0}
+        if resp.status_code != 200:
             raise UpstreamUnavailableError(f"unexpected status {resp.status_code}: {path}")
         return resp.json()
+
+    async def post_json(self, path: str, body: dict[str, Any]) -> Any:
+        """POST with the site's success semantics.
+
+        201 = created; 200 = idempotent replay of the same idempotency_key. Both are
+        success. Payload rejections (400/409/422) are contract failures, not outages —
+        raise UpstreamInvalidResponseError so callers never retry a bad payload blindly.
+        """
+        resp = await self._request("POST", path, json_body=body)
+        if resp.status_code in (200, 201):
+            return resp.json()
+        if resp.status_code in (400, 409, 422):
+            raise UpstreamInvalidResponseError(f"upstream rejected payload ({resp.status_code}): {path}")
+        raise UpstreamUnavailableError(f"unexpected status {resp.status_code}: {path}")

@@ -16,7 +16,15 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
+from rfq_copilot.adapters.zhaozhenkong_offline.zzk_cases import detect_case_query
+from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import detect_solution_query
 from rfq_copilot.core.agent.llm import LLMClient
+from rfq_copilot.core.agent.routing_guards import (
+    INQUIRY_CREATE_MARKERS,
+    apply_routing_guards,
+    detect_inquiry_status_query,
+    select_search_keyword,
+)
 from rfq_copilot.core.manifest import Manifest
 from rfq_copilot.core.memory import SessionStore
 from rfq_copilot.core.policies.faq_matcher import FaqMatcher
@@ -34,7 +42,7 @@ from rfq_copilot.ports.lead_distribution import LeadDistributionPort
 from rfq_copilot.ports.product_catalog import ProductCatalogPort, ProductSearchQuery
 from rfq_copilot.ports.supplier_directory import SupplierDirectoryPort, SupplierSearchQuery
 
-MAX_SEARCH_ITEMS = 3
+MAX_SEARCH_ITEMS = 10
 
 INTENT_ENUM = frozenset(
     {
@@ -50,6 +58,9 @@ INTENT_ENUM = frozenset(
         "certification_inquiry",
         "complaint",
         "human_request",
+        "solution_inquiry",
+        "case_inquiry",
+        "status_inquiry",
         "unknown",
     }
 )
@@ -70,11 +81,48 @@ VALID_ROUTES = frozenset(
         "knowledge_flow",
         "inquiry_flow",
         "handoff_flow",
+        "solution_flow",
+        "case_flow",
+        "status_flow",
         "clarify",
         "refuse_fabrication",
     }
 )
 LEAD_SCORE_THRESHOLD = 70
+
+
+def _humanize_spec_value(spec_value: str) -> str:
+    """规格数值去尾零：'1500.00 m³/h' → '1500 m³/h'，'0.0100 Pa' → '0.01 Pa'。"""
+    text = str(spec_value).strip()
+    match = re.match(r"^([0-9]+(?:\.[0-9]+)?)(.*)$", text)
+    if not match:
+        return text
+    number, unit = match.group(1), match.group(2)
+    if "." in number:
+        number = number.rstrip("0").rstrip(".")
+    return f"{number}{unit}"
+
+
+def _product_cards_payload(items: list[Any], whitelist: set[str]) -> tuple[list[dict[str, Any]], int]:
+    """构造产品卡片事件 + 返回展示数量（含价格白名单登记）。"""
+    cards: list[dict[str, Any]] = []
+    for item in items:
+        price = item.price_display.text
+        if item.price_display.mode == "shown":
+            whitelist.add(price.strip())
+        cards.append(
+            {
+                "kind": "product",
+                "name": item.name,
+                "supplier": item.supplier_name,
+                "brand": item.brand_name,
+                "category": item.category_name,
+                "price": price,
+                "url": item.url,
+                "specs": {key: _humanize_spec_value(value) for key, value in list(item.specs.items())[:3]},
+            },
+        )
+    return cards, len(items)
 
 
 def _merge_lists(left: list[Any] | None, right: list[Any] | None) -> list[Any]:
@@ -110,6 +158,9 @@ class GraphDeps:
     rag: RAGPipeline | None = None
     inquiry_sink: InquirySinkPort | None = None
     lead_distribution: LeadDistributionPort | None = None
+    solutions: Any | None = None  # 行业方案目录（ZzkSolutionDirectory；离线知识资产）
+    cases: Any | None = None  # 客户案例目录（ZzkCaseDirectory；离线知识资产）
+    inquiry_status: Any | None = None  # 询盘状态查询（InquiryStatusPort；真通道专用）
     poisoned_ids: frozenset[str] = field(default_factory=frozenset)
 
     def tool_guard(self, name: str) -> None:
@@ -282,33 +333,131 @@ def _respond_node(deps: GraphDeps) -> Any:
                         )
                     )
                 answer = "\n".join(lines)
-        elif route in {"product_flow", "selection_flow"} and "search_products" in tools:
-            events.append(("tool_call", {"tool": "search_products", "status": "running"}))
-            tool_calls.append("search_products")
-            result = await _call_tool(tools["search_products"], ProductSearchQuery(keyword=message[:40]))
-            events.append(("tool_call", {"tool": "search_products", "status": "done"}))
-            lines = ["为您找到以下产品（并列供参考）："]
-            for item in result.items[:MAX_SEARCH_ITEMS]:
-                specs = "；".join(f"{k}:{v}" for k, v in list(item.specs.items())[:2])
-                price = item.price_display.text
-                if item.price_display.mode == "shown":
-                    whitelist.add(price.strip())
-                lines.append(f"1. {item.name}（{item.supplier_name}）{specs}；价格：{price}。详情：{item.url}")
-                events.append(("citation", {"title": item.name, "url": item.url, "trust": "merchant"}))
+        elif route == "solution_flow" and deps.solutions is not None:
+            tool_calls.append("get_solution")
+            events.append(("tool_call", {"tool": "get_solution", "status": "running"}))
+            entities = (state.get("understanding") or {}).get("entities") or {}
+            industry = entities.get("industry") or detect_solution_query(message)
+            solution = deps.solutions.by_industry(industry) if industry else None
+            events.append(("tool_call", {"tool": "get_solution", "status": "done"}))
+            if solution is None:
+                answer = "该行业暂无已发布方案。您可以先看产品，或直接提交询盘让供应商出方案。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            for supplier in solution.suppliers[:3]:
+                events.append(("citation", {"title": supplier, "trust": "merchant"}))
+            events.append(
+                (
+                    "card",
+                    {
+                        "kind": "solution",
+                        "title": solution.name,
+                        "industry": solution.industry_name,
+                        "subtitle": solution.subtitle,
+                        "pain_points": solution.pain_points[:3],
+                        "topology": solution.topology,
+                        "budget": solution.budget_text,
+                        "suppliers": solution.suppliers[:3],
+                        "url": solution.url,
+                    },
+                )
+            )
+            answer = (
+                f"「{solution.industry_name}」行业已有一套成熟方案：{solution.name}。"
+                "卡片内含痛点分析与设备拓扑，点击可查看完整方案。"
+            )
+        elif route == "case_flow" and deps.cases is not None:
+            tool_calls.append("get_cases")
+            events.append(("tool_call", {"tool": "get_cases", "status": "running"}))
+            case_entities = (state.get("understanding") or {}).get("entities") or {}
+            case_industry = case_entities.get("industry") or detect_case_query(message)[0]
+            case_hits = deps.cases.by_industry_slug(case_industry)[:3]
+            events.append(("tool_call", {"tool": "get_cases", "status": "done"}))
+            if not case_hits:
+                answer = "暂无已发布案例。您可以先看产品参数，或直接提交询盘。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            for case in case_hits:
+                events.append(("citation", {"title": case.title, "url": case.url, "trust": "platform"}))
                 events.append(
                     (
                         "card",
                         {
-                            "kind": "product",
-                            "name": item.name,
-                            "supplier": item.supplier_name,
-                            "price": price,
-                            "url": item.url,
-                            "specs": dict(list(item.specs.items())[:3]),
+                            "kind": "case",
+                            "title": case.title,
+                            "industry": case.industry_name,
+                            "customer": case.customer_name,
+                            "metrics": case.metrics,
+                            "result": case.result,
+                            "has_whitepaper": case.has_whitepaper,
+                            "supplier": case.supplier,
+                            "url": case.url,
                         },
                     )
                 )
-            answer = "\n".join(lines) if result.items else "暂未找到匹配产品，您可以补充关键词或提交询盘。"
+            case_scope = f"「{case_hits[0].industry_name}」行业" if case_industry else ""
+            answer = (
+                f"找到 {len(case_hits)} 个{case_scope}交付案例（卡片含量化指标与客户成效）。白皮书可在案例页留资下载。"
+            )
+        elif route == "status_flow" and deps.inquiry_status is not None:
+            tool_calls.append("inquiry_status")
+            events.append(("tool_call", {"tool": "inquiry_status", "status": "running"}))
+            status_payload = await deps.inquiry_status.by_session(state["session_id"])
+            events.append(("tool_call", {"tool": "inquiry_status", "status": "done"}))
+            status_items = status_payload.get("items") or []
+            if not status_items:
+                answer = "当前会话还没有询盘记录。您可以先挑选产品发起询盘。"
+                return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+            for item in status_items[:5]:
+                events.append(
+                    (
+                        "card",
+                        {
+                            "kind": "inquiry_status",
+                            "inquiry_id": str(item["inquiry_id"]),
+                            "title": item["title"],
+                            "status_text": item["status_text"],
+                            "quote_count": item.get("quote_count") or 0,
+                            "created_at": item.get("created_at"),
+                        },
+                    )
+                )
+            status_lines = [
+                f"  · [{item['inquiry_id']}] {item['title']}｜{item['status_text']}"
+                + (f"｜已收 {item['quote_count']} 份报价" if item.get("quote_count") else "")
+                for item in status_items[:5]
+            ]
+            answer = f"本会话共 {len(status_items)} 条询盘：\n" + "\n".join(status_lines)
+        elif route in {"product_flow", "selection_flow"} and "search_products" in tools:
+            events.append(("tool_call", {"tool": "search_products", "status": "running"}))
+            tool_calls.append("search_products")
+            keyword = select_search_keyword(message, state.get("understanding"))
+            result = await _call_tool(
+                tools["search_products"], ProductSearchQuery(keyword=keyword, page_size=MAX_SEARCH_ITEMS)
+            )
+            events.append(("tool_call", {"tool": "search_products", "status": "done"}))
+            # 回答形式（ChatGPT/Perplexity 卡片模式）：数据交给卡片，文本只做简短引导，
+            # 不再逐条复读卡片内容（此前名称/供应商/参数/URL 全部重复一遍，可读性差）。
+            # 同名去重：站点数据存在同名多 listing（如"2BE系列"×4），展示层只留首个
+            seen_names: set[str] = set()
+            deduped: list[Any] = []
+            for item in result.items:
+                if item.name in seen_names:
+                    continue
+                seen_names.add(item.name)
+                deduped.append(item)
+            shown = deduped[:MAX_SEARCH_ITEMS]
+            for item in shown:
+                events.append(("citation", {"title": item.name, "url": item.url, "trust": "merchant"}))
+            cards, _shown_count = _product_cards_payload(shown, whitelist)
+            for card in cards:
+                events.append(("card", card))
+            if shown:
+                keyword_text = f"与「{keyword}」相关的" if keyword else ""
+                answer = (
+                    f"为您找到 {_shown_count} 款{keyword_text}产品，点击卡片可查看参数与详情。"
+                    "如需精确匹配，可告诉我目标真空度或抽速，也可以直接发起询盘。"
+                )
+            else:
+                answer = "暂未找到匹配产品，您可以换个说法（如「无油旋片泵」），或直接提交询盘让供应商来找您。"
         elif route == "knowledge_flow" and deps.rag is not None:
             tool_calls.append("search_knowledge")
             events.append(("tool_call", {"tool": "search_knowledge", "status": "running"}))
@@ -643,6 +792,10 @@ def _understand_node(deps: GraphDeps) -> Any:
                 u["entities"] = deps.store.merged_entities(state["session_id"])
         else:
             events.append(("status", {"message": "正在整理回答"}))
+        # 确定性护栏：修正分类器在产品问法/供应商问法之间的摇摆（见 routing_guards 模块）
+        u = apply_routing_guards(state.get("message", ""), u)
+        if u.get("route_guard"):
+            events.append(("status", {"message": "正在整理回答"}))
         return {"understanding": u, "route": str(u["route"]), "events": events}
 
     return node
@@ -678,10 +831,49 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
                 "human_reason": None,
                 "refusal_reason": reason,
             }
+    # 询盘状态查询：必须先于询盘创建判定（"我的询盘有人跟吗"含"询盘"二字）
+    if detect_inquiry_status_query(message) and deps.inquiry_status is not None:
+        return {
+            "intent": "status_inquiry",
+            "confidence": 0.99,
+            "entities": {},
+            "missing_fields": [],
+            "route": "status_flow",
+            "needs_clarification": False,
+            "needs_human": False,
+            "human_reason": None,
+            "refusal_reason": None,
+        }
+    # 案例意图确定性路由：案例问法（+可选行业词）→ case_flow（0 token）
+    case_industry, case_matched = detect_case_query(message)
+    if case_matched:
+        return {
+            "intent": "case_inquiry",
+            "confidence": 0.99,
+            "entities": {"industry": case_industry} if case_industry else {},
+            "missing_fields": [],
+            "route": "case_flow",
+            "needs_clarification": False,
+            "needs_human": False,
+            "human_reason": None,
+            "refusal_reason": None,
+        }
+    # 方案意图确定性路由：行业词 + 方案问法 → solution_flow（0 token）
+    solution_industry = detect_solution_query(message)
+    if solution_industry:
+        return {
+            "intent": "solution_inquiry",
+            "confidence": 0.99,
+            "entities": {"industry": solution_industry},
+            "missing_fields": [],
+            "route": "solution_flow",
+            "needs_clarification": False,
+            "needs_human": False,
+            "human_reason": None,
+            "refusal_reason": None,
+        }
     # 询盘意图确定性路由：0 LLM token 直达 inquiry_flow（确认卡 human-in-the-loop）
-    if message.strip() and (
-        "询盘" in message or "询价" in message or "要买" in message or "求购" in message
-    ):
+    if message.strip() and any(marker in message for marker in INQUIRY_CREATE_MARKERS):
         return {
             "intent": "inquiry_flow",
             "confidence": 0.99,
@@ -739,6 +931,9 @@ def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
             "clarify": "respond",
             "faq_answer": "respond",
             "spec_match_flow": "respond",
+            "solution_flow": "respond",
+            "case_flow": "respond",
+            "status_flow": "respond",
         },
     )
     for name in ("refuse", "handoff", "respond", "inquiry"):

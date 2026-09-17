@@ -12,8 +12,11 @@ from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
 from rfq_copilot.app.guest_paths import (
+    detect_case_query,
     detect_guest_inquiry_intent,
     detect_guest_query,
+    detect_inquiry_status_query,
+    detect_solution_query,
     detect_supplier_query,
     guest_knowledge_answer,
     guest_search_answer,
@@ -22,7 +25,14 @@ from rfq_copilot.app.guest_paths import (
 )
 from rfq_copilot.app.limiter import DailyTokenBudget, SlidingWindowLimiter
 from rfq_copilot.app.metrics import VALID_PERIODS
-from rfq_copilot.app.runtime import Runtime, build_runtime, seed_demo, ui_config
+from rfq_copilot.app.runtime import (
+    Runtime,
+    build_runtime,
+    close_checkpointer,
+    init_checkpointer,
+    seed_demo,
+    ui_config,
+)
 from rfq_copilot.app.sse_mapper import map_graph_stream
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.schemas.chat import (
@@ -75,8 +85,13 @@ def _is_zero_token_intent(message: str) -> bool:
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        await seed_demo(get_runtime())
-        yield
+        runtime = get_runtime()
+        await init_checkpointer(runtime)
+        await seed_demo(runtime)
+        try:
+            yield
+        finally:
+            await close_checkpointer(runtime)
 
     app = FastAPI(title="b2b-rfq-copilot", version="0.1.0", lifespan=lifespan)
 
@@ -140,6 +155,105 @@ def create_app() -> FastAPI:
                 rtg.store.append_message(body.session_id, "user", body.message)
                 rtg.store.append_message(body.session_id, "assistant", faq)
                 return await _guest_stream(faq, [])
+
+            # G4: 行业方案捷径（0 token 公开知识：痛点/拓扑/关联供应商，含 solution 卡）
+            solution_industry = detect_solution_query(body.message)
+            if solution_industry and rtg.deps.solutions is not None:
+                rtg.store.append_message(body.session_id, "user", body.message)
+                solution = rtg.deps.solutions.by_industry(solution_industry)
+                if solution is not None:
+                    sol_events: list[tuple[str, dict[str, Any]]] = [
+                        (
+                            "card",
+                            {
+                                "kind": "solution",
+                                "title": solution.name,
+                                "industry": solution.industry_name,
+                                "subtitle": solution.subtitle,
+                                "pain_points": solution.pain_points[:3],
+                                "topology": solution.topology,
+                                "budget": solution.budget_text,
+                                "suppliers": solution.suppliers[:3],
+                                "url": solution.url,
+                            },
+                        )
+                    ]
+                    sol_answer = (
+                        f"「{solution.industry_name}」行业已有一套成熟方案：{solution.name}。"
+                        "卡片内含痛点分析与设备拓扑，点击可查看完整方案；登录后可让 AI 按您的产量匹配机型。"
+                    )
+                    rtg.store.append_message(body.session_id, "assistant", sol_answer)
+                    return await _guest_stream(sol_answer, sol_events)
+
+            # G4.5: 客户案例捷径（0 token 公开背书：量化指标/客户成效，含 case 卡）
+            case_industry, case_matched = detect_case_query(body.message)
+            if case_matched and rtg.deps.cases is not None:
+                rtg.store.append_message(body.session_id, "user", body.message)
+                case_hits = rtg.deps.cases.by_industry_slug(case_industry)[:3]
+                if case_hits:
+                    case_events: list[tuple[str, dict[str, Any]]] = []
+                    for case in case_hits:
+                        case_events.append(("citation", {"title": case.title, "url": case.url, "trust": "platform"}))
+                        case_events.append(
+                            (
+                                "card",
+                                {
+                                    "kind": "case",
+                                    "title": case.title,
+                                    "industry": case.industry_name,
+                                    "customer": case.customer_name,
+                                    "metrics": case.metrics,
+                                    "result": case.result,
+                                    "has_whitepaper": case.has_whitepaper,
+                                    "supplier": case.supplier,
+                                    "url": case.url,
+                                },
+                            )
+                        )
+                    case_scope = f"「{case_hits[0].industry_name}」行业" if case_industry else ""
+                    case_answer = (
+                        f"找到 {len(case_hits)} 个{case_scope}交付案例"
+                        "（卡片含量化指标与客户成效）。白皮书可在案例页留资下载。"
+                    )
+                    rtg.store.append_message(body.session_id, "assistant", case_answer)
+                    return await _guest_stream(case_answer, case_events)
+
+            # G4.6: 询盘状态捷径（session_id 即凭证；0 token 只读摘要）
+            if detect_inquiry_status_query(body.message) and rtg.deps.inquiry_status is not None:
+                rtg.store.append_message(body.session_id, "user", body.message)
+                status_payload = await rtg.deps.inquiry_status.by_session(body.session_id)
+                status_items = status_payload.get("items") or []
+                if not status_items:
+                    no_answer = "本会话还没有创建过询盘。您可以直接发起询盘，创建后在这里随时查询进展。"
+                    rtg.store.append_message(body.session_id, "assistant", no_answer)
+                    return await _guest_stream(no_answer, [])
+                status_lines = []
+                status_events: list[tuple[str, dict[str, Any]]] = []
+                for item in status_items[:5]:
+                    quote_note = f"收到 {item['quote_count']} 份报价" if item.get("quote_count") else "待供应商报价"
+                    status_lines.append(
+                        f"  · [{item['inquiry_id']}] {item['title']}｜状态：{item['status_text']}｜{quote_note}"
+                    )
+                    status_events.append(
+                        (
+                            "card",
+                            {
+                                "kind": "inquiry_status",
+                                "inquiry_id": str(item["inquiry_id"]),
+                                "title": item["title"],
+                                "status_text": item["status_text"],
+                                "quote_count": item.get("quote_count") or 0,
+                                "created_at": item.get("created_at"),
+                            },
+                        )
+                    )
+                status_answer = (
+                    f"本会话共 {len(status_items)} 条询盘，进展如下：\n"
+                    + "\n".join(status_lines)
+                    + "\n如需修改或补充，直接告诉我，或扫码联系专属工程师。"
+                )
+                rtg.store.append_message(body.session_id, "assistant", status_answer)
+                return await _guest_stream(status_answer, status_events)
 
             # G3: 供应商白名单（0 token 公开档案：列表/详情，含 card 结构化事件）
             supplier_mode = detect_supplier_query(body.message, rtg.deps.suppliers)

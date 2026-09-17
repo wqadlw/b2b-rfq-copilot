@@ -16,6 +16,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "langgraph-checkpoint-postgres>=2.0",
     "tenacity>=9.1.4",
+    "langgraph-checkpoint-sqlite>=3.1.1",
 ]
 
 [project.optional-dependencies]
@@ -59,6 +60,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
+markers = ["eval: golden-set regression cases (deterministic, 0-LLM-token)"]
 pythonpath = ["backend/src"]
 
 [tool.importlinter]

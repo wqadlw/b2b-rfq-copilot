@@ -122,7 +122,11 @@ async def test_product_flow_cites_and_neutral() -> None:
     graph = build_graph(deps)
     final = await graph.ainvoke({"session_id": "s6", "message": "有哪些真空泵？"})
     assert "search_products" in final["tool_calls"]
-    assert "并列供参考" in final["answer"]
+    # 回答形式契约：卡片承载详情，文本只做简短引导——不复读 URL/价格/供应商
+    assert "为您找到" in final["answer"]
+    assert "/products/" not in final["answer"]
+    assert "请联系供应商询价" not in final["answer"]
+    assert len([e for e in final.get("events", []) if e[0] == "card"]) > 0
 
 
 async def test_poisoned_knowledge_content_never_enters_answer() -> None:

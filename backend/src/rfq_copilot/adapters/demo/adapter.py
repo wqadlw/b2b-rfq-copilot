@@ -119,6 +119,17 @@ class DemoInquirySink(InquirySinkPort):
         return InquiryResult(inquiry_id=inquiry_id, state="created")
 
 
+class DemoInquiryStatus:
+    """会话内询盘状态摘要（demo store 直查；status_flow 用）。"""
+
+    def __init__(self, store: DemoInquiryStore) -> None:
+        self._store = store
+
+    async def by_session(self, session_id: str) -> dict[str, Any]:
+        """demo 语义：store 无 session 维度，返回空集——状态查询在 demo 模式下诚实报告"无记录"。"""
+        return {"items": [], "total": 0}
+
+
 class DemoLeadDistribution(LeadDistributionPort):
     async def submit(self, lead: LeadCandidate) -> DistributionResult:
         logger.info("demo lead candidate logged: %s score=%s", lead.inquiry_id, lead.lead_score)
@@ -132,6 +143,7 @@ class DemoPorts:
     knowledge: DemoKnowledgeSource
     inquiry_sink: DemoInquirySink
     lead_distribution: DemoLeadDistribution
+    inquiry_status: DemoInquiryStatus = field(default=None)  # type: ignore[assignment]
     store: DemoInquiryStore = field(default_factory=DemoInquiryStore)
 
 
@@ -143,5 +155,6 @@ def build_demo_ports() -> DemoPorts:
         knowledge=DemoKnowledgeSource(data.DOCS + data.POISON_DOCS),
         inquiry_sink=DemoInquirySink(store),
         lead_distribution=DemoLeadDistribution(),
+        inquiry_status=DemoInquiryStatus(store),
         store=store,
     )

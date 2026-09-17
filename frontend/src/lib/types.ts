@@ -63,12 +63,26 @@ export interface ChatEventData {
   certs?: string[];
   main_products?: string[];
   description?: string;
+  industry?: string;
+  subtitle?: string;
+  pain_points?: { title: string; desc: string }[];
+  topology?: string;
+  budget?: string;
+  customer?: string;
+  metrics?: { label: string; actual: string; unit: string }[];
+  has_whitepaper?: boolean;
+  status_text?: string;
+  quote_count?: number;
+  suppliers?: string[];
+  created_at?: string;
 }
 
 export interface EntityCardData {
-  kind: "product" | "supplier";
+  kind: "product" | "supplier" | "solution" | "case" | "inquiry_status";
   name: string;
   supplier?: string;
+  brand?: string | null;
+  category?: string | null;
   price?: string;
   url?: string;
   specs?: Record<string, string>;
@@ -76,6 +90,20 @@ export interface EntityCardData {
   certs?: string[];
   main_products?: string[];
   description?: string;
+  metrics?: { label: string; actual: string; unit: string }[];
+  has_whitepaper?: boolean;
+  inquiry_id?: string | null;
+  status_text?: string | null;
+  quote_count?: number | null;
+  created_at?: string | null;
+  customer?: string | null;
+  title?: string;
+  industry?: string;
+  pain_points?: { title: string; desc: string }[];
+  topology?: string | null;
+  budget?: string | null;
+  suppliers?: string[];
+  subtitle?: string | null;
 }
 
 export interface Citation {

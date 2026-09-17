@@ -13,9 +13,17 @@ import {
 import { AlertCircle, CheckCircle2, Loader2, Pencil, SendHorizonal, Sparkles, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
-import { ProductCard, SupplierCard, type EntityCardData } from "./EntityCard";
+import {
+  CaseCard,
+  InquiryStatusCard,
+  ProductCard,
+  SolutionCard,
+  SupplierCard,
+} from "./EntityCard";
+import type { EntityCardData } from "../../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
+import { toEntityCard } from "../../lib/cardMapper";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
 import { cn } from "../../lib/utils";
 import { createInquiryCardState, inquiryReducer } from "../../lib/inquiryReducer";
@@ -211,18 +219,7 @@ export function ChatWidget(): ReactElement {
             setMessages((prev) => {
               const last = prev[prev.length - 1];
               if (last === undefined) return prev;
-              const card: EntityCardData = {
-                kind: data.kind as "product" | "supplier",
-                name: String(data.name ?? ""),
-                supplier: data.supplier !== undefined ? String(data.supplier) : undefined,
-                price: data.price !== undefined ? String(data.price) : undefined,
-                url: data.url !== undefined ? String(data.url) : undefined,
-                specs: (data.specs as Record<string, string>) ?? undefined,
-                region: data.region !== undefined ? (data.region as string | null) : undefined,
-                certs: (data.certs as string[]) ?? undefined,
-                main_products: (data.main_products as string[]) ?? undefined,
-                description: data.description !== undefined ? String(data.description) : undefined,
-              };
+              const card: EntityCardData = toEntityCard(data);
               const list = [...(last.cards ?? []), card];
               return [...prev.slice(0, -1), { ...last, cards: list }];
             });
@@ -342,7 +339,8 @@ export function ChatWidget(): ReactElement {
               onCopy={handleCopy}
               onFeedback={(kind) => handleFeedback(String(index), kind)}
             />
-            {message.citations && message.citations.length > 0 && (
+            {/* 卡片已承载来源（名称+链接），引用 chips 仅在无卡片的消息展示（知识问答等） */}
+            {message.citations && message.citations.length > 0 && !message.cards?.length && (
               <div className="ml-8 flex flex-wrap gap-1">
                 {message.citations.map((c, ci) => (
                   <CitationCard key={ci} citation={c} />
@@ -523,7 +521,10 @@ export function ChatWidget(): ReactElement {
   );
 }
 
-/** CardStack — 卡片堆叠：≤3 全显，超出折叠"查看全部"（Shopify Sidekick 模式，不做轮播）。 */
+/** CardStack — 卡片堆叠：折叠显示 3 张，展开后分页（每页 5 张，上一页/下一页）。 */
+const CARDS_COLLAPSED = 3;
+const CARDS_PER_PAGE = 5;
+
 function CardStack({
   cards,
   expanded,
@@ -535,24 +536,62 @@ function CardStack({
   onToggle: () => void;
   onInquiry: (card: EntityCardData) => void;
 }): ReactElement {
-  const visible = expanded ? cards : cards.slice(0, 3);
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(cards.length / CARDS_PER_PAGE));
+  const safePage = Math.min(page, totalPages - 1);
+  const visible = expanded
+    ? cards.slice(safePage * CARDS_PER_PAGE, (safePage + 1) * CARDS_PER_PAGE)
+    : cards.slice(0, CARDS_COLLAPSED);
   return (
     <div className="ml-8 flex w-full flex-col gap-2">
       {visible.map((card, idx) =>
         card.kind === "product" ? (
-          <ProductCard key={idx} card={card} onInquiry={onInquiry} />
+          <ProductCard key={card.url || idx} card={card} onInquiry={onInquiry} />
+        ) : card.kind === "solution" ? (
+          <SolutionCard key={card.url || idx} card={card} />
+        ) : card.kind === "case" ? (
+          <CaseCard key={card.url || idx} card={card} />
+        ) : card.kind === "inquiry_status" ? (
+          <InquiryStatusCard key={idx} card={card} />
         ) : (
-          <SupplierCard key={idx} card={card} />
+          <SupplierCard key={card.url || idx} card={card} />
         ),
       )}
-      {cards.length > 3 && (
-        <button
-          type="button"
-          onClick={onToggle}
-          className="self-start text-xs text-primary transition-colors hover:underline"
-        >
-          {expanded ? "收起" : `查看全部 ${cards.length} 个`}
-        </button>
+      {expanded && totalPages > 1 ? (
+        <div className="flex items-center gap-3 self-start text-xs text-muted-foreground">
+          <button
+            type="button"
+            disabled={safePage === 0}
+            onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+            className="rounded border border-border px-2 py-0.5 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            上一页
+          </button>
+          <span data-testid="card-page">
+            第 {safePage + 1} / {totalPages} 页 · 共 {cards.length} 个
+          </span>
+          <button
+            type="button"
+            disabled={safePage >= totalPages - 1}
+            onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+            className="rounded border border-border px-2 py-0.5 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            下一页
+          </button>
+        </div>
+      ) : (
+        cards.length > CARDS_COLLAPSED && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="self-start text-xs text-primary transition-colors hover:underline"
+          >
+            {expanded ? "收起" : `查看全部 ${cards.length} 个`}
+          </button>
+        )
+      )}
+      {cards.length >= 3 && (
+        <p className="text-[10px] leading-3 text-ink-muted">参数与货期以供应商确认为准</p>
       )}
     </div>
   );

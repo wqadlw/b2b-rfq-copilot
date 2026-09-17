@@ -34,3 +34,6 @@ Thumbs.db
 # ===== 评测产物（脚本生成，不提交）=====
 eval/reports/
 eval/generated/
+
+# 本地运行数据（sqlite checkpointer 等）
+.data/
