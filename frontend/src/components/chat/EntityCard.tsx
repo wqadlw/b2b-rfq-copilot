@@ -3,37 +3,10 @@
  *  工业风：克制圆角、灰阶分层、主色仅用于 CTA 与认证徽章。 */
 
 import type { ReactElement } from "react";
+import type { EntityCardData } from "../../lib/types";
 import { ArrowUpRight, BadgeCheck, Building2, MapPin } from "lucide-react";
 import { cn } from "../../lib/utils";
 
-export interface EntityCardData {
-  kind: "product" | "supplier" | "solution" | "case" | "inquiry_status";
-  name: string;
-  supplier?: string;
-  brand?: string | null;
-  category?: string | null;
-  price?: string;
-  url?: string;
-  specs?: Record<string, string>;
-  region?: string | null;
-  certs?: string[];
-  main_products?: string[];
-  description?: string;
-  metrics?: { label: string; actual: string; unit: string }[];
-  has_whitepaper?: boolean;
-  inquiry_id?: string | null;
-  status_text?: string | null;
-  quote_count?: number | null;
-  created_at?: string | null;
-  customer?: string | null;
-  title?: string;
-  industry?: string;
-  pain_points?: { title: string; desc: string }[];
-  topology?: string | null;
-  budget?: string | null;
-  suppliers?: string[];
-  subtitle?: string | null;
-}
 
 function certIcon(c: string): ReactElement {
   const lower = c.toLowerCase();

@@ -100,9 +100,11 @@ class VacuumSampleProductCatalog(ProductCatalogPort):
             params={"keyword": query.keyword, "page": query.page, "page_size": query.page_size},
         )
         primary = _model(ProductSearchResult, payload)
-        if primary.total > 0 or query.page > 1 or not query.keyword.strip():
+        if primary.total > 0 or not query.keyword.strip():
             return primary
 
+        # 零结果回退对任意 page 生效：合并全集后本地分页，保证 page1/page2 语义一致
+        # （此前 page>1 不触发回退，会出现"第 1 页有回退结果、第 2 页为空"的断层）。
         terms = _fallback_terms(query.keyword)
         if not terms:
             return primary
@@ -111,12 +113,14 @@ class VacuumSampleProductCatalog(ProductCatalogPort):
         for term in terms:
             fallback_payload = await self._client.get_json(
                 "/internal-api/v1/products/search",
-                params={"keyword": term, "page": 1, "page_size": query.page_size},
+                params={"keyword": term, "page": 1, "page_size": 50},
             )
             for item in _model(ProductSearchResult, fallback_payload).items:
                 merged.setdefault(item.id, item)
-        items = list(merged.values())[: query.page_size]
-        return ProductSearchResult(items=items, total=len(merged))
+        merged_list = list(merged.values())
+        start = (query.page - 1) * query.page_size
+        items = merged_list[start : start + query.page_size]
+        return ProductSearchResult(items=items, total=len(merged_list))
 
     async def get_detail(self, product_id: str) -> ProductDetail | None:
         payload = await self._client.get_json(f"/internal-api/v1/products/{product_id}")

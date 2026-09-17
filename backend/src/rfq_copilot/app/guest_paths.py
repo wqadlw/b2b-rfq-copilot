@@ -19,6 +19,9 @@ from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import (
 )
 from rfq_copilot.core.agent.graph import _humanize_spec_value
 from rfq_copilot.core.agent.routing_guards import (
+    INQUIRY_CREATE_MARKERS as INQUIRY_CREATE_MARKERS,
+)
+from rfq_copilot.core.agent.routing_guards import (
     detect_inquiry_status_query as detect_inquiry_status_query,
 )
 from rfq_copilot.core.manifest import Manifest
@@ -116,7 +119,7 @@ SUPPLIER_LIST_RE = re.compile(r"供应商|厂家|厂商|服务商")
 def detect_guest_inquiry_intent(message: str) -> bool:
     """游客询盘意图白名单：明确要求发起询盘（创建流程走 0-token 工具链+确认卡）。"""
     text = message.strip()
-    return bool(text) and ("询盘" in text or "询价" in text or "要买" in text or "求购" in text)
+    return bool(text) and any(marker in text for marker in INQUIRY_CREATE_MARKERS)
 
 
 def detect_supplier_query(message: str, suppliers: Any) -> str:

@@ -59,6 +59,9 @@ SUPPLIER_FOCUS_MARKERS: tuple[str, ...] = (
 
 GUARD_NAME = "product_over_supplier"
 
+# 询盘创建关键词（单一事实源）：graph 短路与游客 gate 共用
+INQUIRY_CREATE_MARKERS: tuple[str, ...] = ("询盘", "询价", "要买", "求购")
+
 
 def _has_product_category(entities: dict[str, Any] | None) -> bool:
     if not entities:

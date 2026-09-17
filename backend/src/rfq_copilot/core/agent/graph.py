@@ -20,6 +20,7 @@ from rfq_copilot.adapters.zhaozhenkong_offline.zzk_cases import detect_case_quer
 from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import detect_solution_query
 from rfq_copilot.core.agent.llm import LLMClient
 from rfq_copilot.core.agent.routing_guards import (
+    INQUIRY_CREATE_MARKERS,
     apply_routing_guards,
     detect_inquiry_status_query,
     select_search_keyword,
@@ -872,7 +873,7 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
             "refusal_reason": None,
         }
     # 询盘意图确定性路由：0 LLM token 直达 inquiry_flow（确认卡 human-in-the-loop）
-    if message.strip() and ("询盘" in message or "询价" in message or "要买" in message or "求购" in message):
+    if message.strip() and any(marker in message for marker in INQUIRY_CREATE_MARKERS):
         return {
             "intent": "inquiry_flow",
             "confidence": 0.99,

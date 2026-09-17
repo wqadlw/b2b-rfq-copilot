@@ -326,9 +326,24 @@ async def test_primary_hits_disable_fallback() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_fallback_skipped_on_page_two() -> None:
+async def test_fallback_applies_on_page_two_consistently() -> None:
+    """R3 勘误：page>1 也走回退——合并全集后本地分页，page1/page2 语义一致。
+
+    原契约（page>1 跳过回退）会产生"第 1 页有回退结果、第 2 页为空"的断层，
+    审查 R3 认定为缺陷，本测试记录新契约。
+    """
     _, catalog = _ports()
-    route = respx.get(f"{BASE}/internal-api/v1/products/search").respond(200, json={"items": [], "total": 0})
-    result = await catalog.search(ProductSearchQuery(keyword="无油真空泵", page=2))
-    assert result.total == 0
-    assert route.call_count == 1  # page>1 不触发，避免分页语义不一致
+    table = {
+        "无油真空泵": {"items": [], "total": 0},
+        "无油": {"items": [_item(1, "a"), _item(2, "b")], "total": 2},
+        "真空泵": {"items": [_item(3, "c"), _item(4, "d")], "total": 2},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=table.get(request.url.params.get("keyword"), {"items": [], "total": 0}))
+
+    respx.get(f"{BASE}/internal-api/v1/products/search").mock(side_effect=handler)
+    page1 = await catalog.search(ProductSearchQuery(keyword="无油真空泵", page=1, page_size=2))
+    page2 = await catalog.search(ProductSearchQuery(keyword="无油真空泵", page=2, page_size=2))
+    assert page1.total == 4 and [i.id for i in page1.items] == ["1", "2"]
+    assert page2.total == 4 and [i.id for i in page2.items] == ["3", "4"]

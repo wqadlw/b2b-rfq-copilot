@@ -19,10 +19,11 @@ import {
   ProductCard,
   SolutionCard,
   SupplierCard,
-  type EntityCardData,
 } from "./EntityCard";
+import type { EntityCardData } from "../../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
+import { toEntityCard } from "../../lib/cardMapper";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
 import { cn } from "../../lib/utils";
 import { createInquiryCardState, inquiryReducer } from "../../lib/inquiryReducer";
@@ -218,18 +219,7 @@ export function ChatWidget(): ReactElement {
             setMessages((prev) => {
               const last = prev[prev.length - 1];
               if (last === undefined) return prev;
-              const card: EntityCardData = {
-                kind: data.kind as "product" | "supplier" | "solution" | "case" | "inquiry_status",
-                name: String(data.name ?? ""),
-                supplier: data.supplier !== undefined ? String(data.supplier) : undefined,
-                price: data.price !== undefined ? String(data.price) : undefined,
-                url: data.url !== undefined ? String(data.url) : undefined,
-                specs: (data.specs as Record<string, string>) ?? undefined,
-                region: data.region !== undefined ? (data.region as string | null) : undefined,
-                certs: (data.certs as string[]) ?? undefined,
-                main_products: (data.main_products as string[]) ?? undefined,
-                description: data.description !== undefined ? String(data.description) : undefined,
-              };
+              const card: EntityCardData = toEntityCard(data);
               const list = [...(last.cards ?? []), card];
               return [...prev.slice(0, -1), { ...last, cards: list }];
             });
