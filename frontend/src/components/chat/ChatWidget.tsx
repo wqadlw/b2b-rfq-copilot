@@ -339,7 +339,7 @@ export function ChatWidget({
         ref={listRef}
         onScroll={onListScroll}
         aria-live="polite"
-        className="flex-1 space-y-4 overflow-y-auto p-4"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
       >
         {empty && (
           <div className="flex flex-col items-center gap-3 pt-10 text-center">
