@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     # single-node: interrupt()/resume state survives a restart; M1+ default candidate).
     checkpointer_backend: str = "memory"
     checkpointer_sqlite_path: str = ".data/checkpoints.sqlite"
+    checkpointer_postgres_dsn: str = ""  # postgresql://user:pass@host:5432/db（postgres 后端必填）
 
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""
