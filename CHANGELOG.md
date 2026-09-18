@@ -7,6 +7,11 @@
 
 ### Changed (2026-09-18)
 
+- **QA-0002 注入防护锚点对齐**：检索上下文渲染加 `<retrieved_context>` 外层信封
+  （内嵌信任分块不变），system prompt 引用的锚点自此真实存在；新增
+  "prompt 引用标签 ⊆ 渲染器产出集" 一致性合同测试（spec §01 6.3 同步）。
+- **QA-0008 预算/限流惰性化**：`_BUDGET`/`_LIMITER` 不再 import 期固化，
+  惰性跟随 Settings；`reset_rate_limit_state()` 提供显式刷新点。
 - **适配器与知识资产去品牌化**（ADR-0007，repo-policy 合规）：
   旧适配器包（含站点标识，具名见 git 历史）→ `adapters/vacuum_b2b_offline`；`zzk_*` 模块/类名/
   数据文件名/doc_id 前缀全部中性化；硬编码开发机路径改环境变量 `SUPPLIER_SEEDER_PATH`。

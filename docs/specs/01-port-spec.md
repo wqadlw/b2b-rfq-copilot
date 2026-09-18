@@ -253,11 +253,23 @@ Policy(c) = RefusalPolicy(
 
 ### 6.3 检索内容隔离格式（rag/ 注入 prompt 的固定包装）
 
+外层信封 `<retrieved_context>` 是 system prompt 引用的**唯一锚点**（QA-0002 对齐）；
+内层按信任级分块，内容一律经 html.escape（商户内容无法伪造闭合标签）：
+
 ```
-<retrieved_context doc_id="kb_001" trust="merchant" source_supplier="45">
-…内容…
+<retrieved_context>
+<platform_context trusted="true">
+[1] …平台内容…
+</platform_context>
+
+<merchant_context trusted="false" supplier_id="demo-s-001">
+[2] …商户内容…
+</merchant_context>
 </retrieved_context>
 ```
+
+常量单一事实源：`core/rag/citation.py` 的 `RETRIEVED_CONTEXT_TAG` 与
+`context_anchor_tags()`；一致性测试保证 prompt 引用的 `<*_context>` 标签 ⊆ 渲染器产出集。
 
 ### 6.4 输出侧过滤
 

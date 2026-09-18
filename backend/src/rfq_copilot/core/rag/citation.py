@@ -7,6 +7,17 @@ from rfq_copilot.core.rag.chunking import Chunk
 
 CITATION_PATTERN = re.compile(r"\[(\d+)\]")
 
+# QA-0002 单一事实源：外层信封是 system prompt 引用的锚点（spec §01 6.3）；
+# 内层按信任级分块。prompt 侧引用的 <*_context> 标签必须 ⊆ context_anchor_tags()。
+RETRIEVED_CONTEXT_TAG = "retrieved_context"
+PLATFORM_CONTEXT_TAG = "platform_context"
+MERCHANT_CONTEXT_TAG = "merchant_context"
+
+
+def context_anchor_tags() -> frozenset[str]:
+    """渲染器可能产出的全部具名标签（信封 + 信任分块），供一致性测试对照。"""
+    return frozenset({RETRIEVED_CONTEXT_TAG, PLATFORM_CONTEXT_TAG, MERCHANT_CONTEXT_TAG})
+
 
 def _escape(text: str) -> str:
     """Escape angle brackets/& so merchant content cannot forge context tags."""
@@ -29,7 +40,8 @@ def render_context(chunks: list[Chunk]) -> str:
         blocks.append(
             f'<merchant_context trusted="false" supplier_id="{_escape(supplier_id)}">\n{lines}\n</merchant_context>'
         )
-    return "\n\n".join(blocks)
+    body = "\n\n".join(blocks)
+    return f"<{RETRIEVED_CONTEXT_TAG}>\n{body}\n</{RETRIEVED_CONTEXT_TAG}>" if body else ""
 
 
 def validate_citations(answer: str, chunk_count: int) -> tuple[str, list[str]]:
