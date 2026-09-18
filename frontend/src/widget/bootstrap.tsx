@@ -19,6 +19,10 @@ function mount(): void {
   //   data-user-ref（用户 id）+ data-ai-ticket（HMAC 短时票据）→ sessions 验签
   const userRef = script?.dataset.userRef ?? "";
   const aiTicket = script?.dataset.aiTicket ?? "";
+  // 演示/生产模式：data-widget-mode="demo" 时显示分级访问演示条（假登录）；
+  // 缺省 production——游客态渲染可关闭的登录引导（跳 data-login-url）
+  const widgetMode = script?.dataset.widgetMode === "demo" ? "demo" : "production";
+  const loginUrl = script?.dataset.loginUrl ?? "";
 
   let host = document.getElementById("rfq-copilot-widget");
   if (host === null) {
@@ -38,7 +42,9 @@ function mount(): void {
   shadow.appendChild(container);
 
   (window as unknown as { RFQ_ENDPOINT?: string }).RFQ_ENDPOINT = endpoint;
-  createRoot(container).render(<ChatWidget initialUserRef={userRef} aiTicket={aiTicket} />);
+  createRoot(container).render(
+    <ChatWidget initialUserRef={userRef} aiTicket={aiTicket} widgetMode={widgetMode} loginUrl={loginUrl} />,
+  );
 }
 
 if (document.readyState === "loading") {

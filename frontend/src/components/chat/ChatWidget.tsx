@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { AlertCircle, CheckCircle2, Loader2, Pencil, SendHorizonal, Sparkles, Square } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Pencil, SendHorizonal, Sparkles, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
 import {
@@ -58,11 +58,17 @@ interface PendingConfirm {
 export function ChatWidget({
   initialUserRef,
   aiTicket,
+  widgetMode = "production",
+  loginUrl = "",
 }: {
   /** 宿主站点注入的初始身份（嵌入模式由 blade 按 auth 状态传入） */
   initialUserRef?: string;
   /** E1 鉴权桥：宿主签发的 HMAC 短时票据，创建会话时透传验签 */
   aiTicket?: string;
+  /** demo：显示分级访问演示条（假登录切换）；production：游客态显示可关闭的登录引导 */
+  widgetMode?: "demo" | "production";
+  /** 宿主登录页 URL（data-login-url 注入）；为空则不渲染登录引导链接 */
+  loginUrl?: string;
 } = {}): ReactElement {
   const [config, setConfig] = useState<UiConfig | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -78,6 +84,8 @@ export function ChatWidget({
   const abortRef = useRef<AbortController | null>(null);
   const lastUserMessage = useRef<string>("");
   const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
+  // 生产态游客登录引导：用户可关闭（会话内不再出现）
+  const [showLoginHint, setShowLoginHint] = useState(true);
 
   useEffect(() => {
     void (async () => {
@@ -485,23 +493,47 @@ export function ChatWidget({
         )}
       </div>
 
-      {/* 分级访问演示条：真实站点由宿主注入登录态，demo 用按钮模拟 */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-1.5 text-xs text-ink-muted">
-        <span>
-          {userRef
-            ? "已登录：完整功能可用（每日 AI 额度内）"
-            : "游客模式：常见问题免费答，深度咨询请登录"}
-        </span>
-        {userRef ? (
-          <button type="button" className="text-primary hover:underline" onClick={() => setUserRef(null)}>
-            退出登录（演示）
-          </button>
-        ) : (
-          <button type="button" className="text-primary hover:underline" onClick={() => setUserRef("demo-user")}>
-            登录 / 注册（演示）
-          </button>
-        )}
-      </div>
+      {/* 分级访问：demo 构建显示演示条（假登录切换）；生产构建游客态显示可关闭的登录引导 */}
+      {widgetMode === "demo" ? (
+        <div className="flex items-center justify-between border-b border-border px-4 py-1.5 text-xs text-ink-muted">
+          <span>
+            {userRef
+              ? "已登录：完整功能可用（每日 AI 额度内）"
+              : "游客模式：常见问题免费答，深度咨询请登录"}
+          </span>
+          {userRef ? (
+            <button type="button" className="text-primary hover:underline" onClick={() => setUserRef(null)}>
+              退出登录（演示）
+            </button>
+          ) : (
+            <button type="button" className="text-primary hover:underline" onClick={() => setUserRef("demo-user")}>
+              登录 / 注册（演示）
+            </button>
+          )}
+        </div>
+      ) : (
+        !userRef &&
+        showLoginHint && (
+          <div className="flex items-center justify-between border-t border-line bg-primary-light/40 px-4 py-1.5 text-xs text-ink-secondary">
+            <span>登录后可让 AI 匹配供应商并创建询盘</span>
+            <span className="flex items-center gap-2">
+              {loginUrl !== "" && (
+                <a href={loginUrl} className="font-medium text-primary hover:underline">
+                  登录 / 注册
+                </a>
+              )}
+              <button
+                type="button"
+                aria-label="关闭提示"
+                className="text-ink-muted transition-colors hover:text-ink"
+                onClick={() => setShowLoginHint(false)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          </div>
+        )
+      )}
       {/* Input：busy 时发送钮变停止钮 */}
       <form onSubmit={onSubmit} className="border-t border-line bg-surface p-3">
         <div className="relative">
@@ -515,7 +547,7 @@ export function ChatWidget({
               event.target.style.height = `${Math.min(event.target.scrollHeight, 120)}px`;
             }}
             onKeyDown={onKeyDown}
-            placeholder={busy ? "对方正在输入…" : "描述您的采购需求，如：找一台无油真空泵…"}
+            placeholder={busy ? "正在生成…" : "描述您的采购需求，如：找一台无油真空泵…"}
             className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-20 text-base focus:outline-none focus:ring-2 focus:ring-primary sm:text-sm"
           />
           {busy ? (
@@ -539,10 +571,11 @@ export function ChatWidget({
             </button>
           )}
         </div>
+        {/* 免责声明：composer 附属底行（企业级契约：不独立占横条） */}
+        <p className="mt-1.5 px-1 text-left text-[10px] leading-3 text-ink-muted">
+          内容由 AI 生成 · 价格与货期以供应商确认为准
+        </p>
       </form>
-      <p className="pb-2 text-center text-[11px] text-ink-muted">
-        内容由 AI 生成 · 价格与货期以供应商确认为准
-      </p>
     </div>
   );
 }
@@ -615,9 +648,6 @@ function CardStack({
             {expanded ? "收起" : `查看全部 ${cards.length} 个`}
           </button>
         )
-      )}
-      {cards.length >= 3 && (
-        <p className="text-[10px] leading-3 text-ink-muted">参数与货期以供应商确认为准</p>
       )}
     </div>
   );
