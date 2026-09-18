@@ -13,9 +13,9 @@ from typing import get_args
 
 import pytest
 from fastapi.testclient import TestClient
-from conftest import make_deps, understanding  # noqa: I001  (pytest prepend 惯例，同 unit/integration)
 
 import rfq_copilot.app.main as main_module
+from conftest import make_deps, understanding
 from rfq_copilot.app.runtime import build_runtime
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.core.policies.faq_matcher import FaqEntry, FaqMatcher
