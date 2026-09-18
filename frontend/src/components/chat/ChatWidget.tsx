@@ -354,7 +354,8 @@ export function ChatWidget({
           </span>
           <div>
             <h1 className="text-base font-semibold leading-tight">{config?.display_name ?? "询盘助手"}</h1>
-            <p className="text-xs text-ink-muted">在线 · 由 AI 询盘引擎驱动</p>
+            {/* 免责声明常驻 header 副标题：合规要求 AI 生成标识始终可见，且不占 composer 高度 */}
+            <p className="text-[11px] leading-tight text-ink-muted">内容由 AI 生成 · 价格与货期以供应商确认为准</p>
           </div>
         </div>
 
@@ -589,10 +590,6 @@ export function ChatWidget({
             </button>
           )}
         </div>
-        {/* 免责声明：composer 附属底行（企业级契约：不独立占横条） */}
-        <p className="mt-1.5 px-1 text-left text-[10px] leading-3 text-ink-muted">
-          内容由 AI 生成 · 价格与货期以供应商确认为准
-        </p>
       </form>
     </div>
   );
