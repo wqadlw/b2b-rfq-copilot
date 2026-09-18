@@ -1,4 +1,4 @@
-"""zzk export CLI: dry-run stats + output-dir safety rejection."""
+"""站点知识导出 CLI 测试：dry-run 统计 + 输出目录安全拒绝。"""
 
 import importlib.util
 import json
@@ -7,19 +7,19 @@ from pathlib import Path as _Path
 
 import pytest
 
-_SCRIPT = _Path(__file__).resolve().parents[3] / "scripts" / "zhaozhenkong_export.py"
-_spec = importlib.util.spec_from_file_location("zhaozhenkong_export", _SCRIPT)
+_SCRIPT = _Path(__file__).resolve().parents[3] / "scripts" / "vacuum_b2b_export.py"
+_spec = importlib.util.spec_from_file_location("vacuum_b2b_export", _SCRIPT)
 assert _spec is not None and _spec.loader is not None
-zhaozhenkong_export = importlib.util.module_from_spec(_spec)
-sys.modules["zhaozhenkong_export"] = zhaozhenkong_export
-_spec.loader.exec_module(zhaozhenkong_export)
+vacuum_b2b_export = importlib.util.module_from_spec(_spec)
+sys.modules["vacuum_b2b_export"] = vacuum_b2b_export
+_spec.loader.exec_module(vacuum_b2b_export)
 from pathlib import Path  # noqa: E402
 
-FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "zzk"
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "site"
 
 
 def test_dry_run_reports_stats(capsys: pytest.CaptureFixture[str]) -> None:
-    code = zhaozhenkong_export.main(["--source-dir", str(FIXTURES), "--dry-run"])
+    code = vacuum_b2b_export.main(["--source-dir", str(FIXTURES), "--dry-run"])
     assert code == 0
     out = capsys.readouterr().out
     assert "documents:" in out
@@ -31,7 +31,7 @@ def test_dry_run_reports_stats(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_json_export(tmp_path: Path) -> None:
     json_path = tmp_path / "out.json"
-    code = zhaozhenkong_export.main(["--source-dir", str(FIXTURES), "--dry-run", "--json", str(json_path)])
+    code = vacuum_b2b_export.main(["--source-dir", str(FIXTURES), "--dry-run", "--json", str(json_path)])
     assert code == 0
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["stats"]["documents"] == len(payload["documents"])
@@ -40,28 +40,28 @@ def test_json_export(tmp_path: Path) -> None:
 
 def test_output_dir_rejects_backend_knowledge() -> None:
     with pytest.raises(SystemExit, match="backend/knowledge"):
-        zhaozhenkong_export.main(
+        vacuum_b2b_export.main(
             [
                 "--source-dir",
                 str(FIXTURES),
                 "--dry-run",
                 "--output-dir",
-                str(Path(__file__).resolve().parents[3] / "backend" / "knowledge" / "zzk"),
+                str(Path(__file__).resolve().parents[3] / "backend" / "knowledge" / "out"),
             ]
         )
 
 
 def test_output_dir_rejects_arbitrary_repo_path(tmp_path: Path) -> None:
-    bad = Path(__file__).resolve().parents[3] / "docs" / "zzk-out"
+    bad = Path(__file__).resolve().parents[3] / "docs" / "out"
     with pytest.raises(SystemExit, match="拒绝"):
-        zhaozhenkong_export.main(["--source-dir", str(FIXTURES), "--dry-run", "--output-dir", str(bad)])
+        vacuum_b2b_export.main(["--source-dir", str(FIXTURES), "--dry-run", "--output-dir", str(bad)])
 
 
 def test_output_dir_allows_private_and_writes_filtered_log(tmp_path: Path) -> None:
-    target = tmp_path / "zzk_rag_data"
-    code = zhaozhenkong_export.main(["--source-dir", str(FIXTURES), "--output-dir", str(target)])
+    target = tmp_path / "rag_data"
+    code = vacuum_b2b_export.main(["--source-dir", str(FIXTURES), "--output-dir", str(target)])
     assert code == 0
-    payload = json.loads((target / "zzk_knowledge.json").read_text(encoding="utf-8"))
+    payload = json.loads((target / "knowledge.json").read_text(encoding="utf-8"))
     assert payload["stats"]["documents"] > 0
     log_text = (target / "etl_filtered.log").read_text(encoding="utf-8")
     assert "STATUS_NOT_ON" in log_text

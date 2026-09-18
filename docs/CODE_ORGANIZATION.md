@@ -71,7 +71,7 @@ b2b-rfq-copilot/
 
 ### 4.3 adapters/
 实现端口，负责协议转换（HTTP/Mock/文件）。`demo/` 内置模拟数据与种子脚本；`vacuum_b2b_sample/` 为脱敏示例（example 域名、placeholder token）。
-铁律：只依赖 ports；不修改 core 策略；不夹带站点私有细节（脱敏审查过 CI repo-policy check）。真实找真空适配器在私有站点仓库，不入公开库。
+铁律：只依赖 ports；不修改 core 策略；不夹带站点私有细节（脱敏审查过 CI repo-policy check）。真实站点适配器在私有站点仓库，不入公开库。
 
 ### 4.4 app/
 组装 runtime：加载 manifest（V1~V7 校验）→ 注入 adapter → 构建 Agent 图 → 暴露 API（权威：03-api-spec）。
@@ -117,7 +117,7 @@ backend/tests/unit/{core,ports,adapters,eval} · integration/ · api/ · fixture
 
 - structlog JSON 结构化；必备字段：`trace_id/session_id/request_id/intent/route/tool_name/latency_ms/status/error_code`。
 - 脱敏：手机号 `138****0000`、邮箱 `z***@example.com`；密钥与 PII 明文永不入日志（07-security-spec §5）。
-- 写操作双审计：adapter 本地审计记录 + 站点侧审计（如找真空 OperationLog）。
+- 写操作双审计：adapter 本地审计记录 + 站点侧审计（如站点 OperationLog）。
 
 ## 9. 分支与提交
 

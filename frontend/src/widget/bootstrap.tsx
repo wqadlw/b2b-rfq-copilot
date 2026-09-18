@@ -15,7 +15,7 @@ function mount(): void {
     document.currentScript ??
     (document.querySelector('script[src*="rfq-chat.js"]') as HTMLScriptElement | null);
   const endpoint = script?.dataset.endpoint ?? "";
-  // E1 鉴权桥：宿主（找真空 blade）随登录态注入
+  // E1 鉴权桥：宿主站点 blade 随登录态注入
   //   data-user-ref（用户 id）+ data-ai-ticket（HMAC 短时票据）→ sessions 验签
   const userRef = script?.dataset.userRef ?? "";
   const aiTicket = script?.dataset.aiTicket ?? "";

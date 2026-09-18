@@ -7,14 +7,14 @@ describe("toEntityCard — 审查 R1 回归防线", () => {
     const card = toEntityCard({
       kind: "product",
       name: "贝克 KVT 3.100 无油旋片真空泵",
-      supplier: "昊志机械设备（山东）有限公司",
+      supplier: "示例真空装备（山东）有限公司",
       price: "可询价",
       url: "/products/evs-950",
       specs: { 抽速: "108 m³/h" },
     });
     expect(card.kind).toBe("product");
     expect(card.name).toBe("贝克 KVT 3.100 无油旋片真空泵");
-    expect(card.supplier).toBe("昊志机械设备（山东）有限公司");
+    expect(card.supplier).toBe("示例真空装备（山东）有限公司");
     expect(card.specs).toEqual({ 抽速: "108 m³/h" });
   });
 

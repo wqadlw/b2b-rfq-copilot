@@ -14,7 +14,7 @@
 
 1. **永不通配源 + 凭证**：删除 `https?://.*` 正则。
 2. **生产白名单**：新增 `Settings.cors_allow_origins`（逗号分隔，env `CORS_ALLOW_ORIGINS`），
-   生产部署必须显式配置宿主站点源（如 `https://zhaozhenkong.com,https://www.zhaozhenkong.com`）。
+   生产部署必须显式配置宿主站点源（如 `https://your-domain.com,https://www.your-domain.com`）。
 3. **本机开发豁免**：无论是否配置白名单，`http(s)://(localhost|127.0.0.1)(:port)?` 恒放行
    （widget 本机联调必需；不构成生产暴露面）。
 4. 未配置白名单 + 非本机源 = 拒绝跨域（默认拒绝）。

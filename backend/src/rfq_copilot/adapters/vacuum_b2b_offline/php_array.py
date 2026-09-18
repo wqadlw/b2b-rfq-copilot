@@ -1,4 +1,4 @@
-"""PHP array literal parser for 找真空 seeder files (stdlib only, no eval/exec).
+"""PHP array literal parser for site seeder files (stdlib only, no eval/exec).
 
 Supports both PHP array syntaxes used across the site seeders:
 - long form:  array ( 'k' => 'v', 0 => array ( ... ) )   (product_data.php)

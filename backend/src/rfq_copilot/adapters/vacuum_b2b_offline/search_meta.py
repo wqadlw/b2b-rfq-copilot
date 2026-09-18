@@ -1,6 +1,6 @@
 """站点检索元数据（同义词 / 屏蔽词）的离线复刻。
 
-权威语义（找真空 app/Services/SearchService.php，2026-09-16 实测）：
+权威语义（站点 SearchService 同义词/屏蔽词实现，2026-09-16 实测）：
 - `applySynonym()`：**整串精确替换**——`isset($synonyms[trim($q)])`，只替换与整条查询完全
   相同的词；不是分词替换。
 - `isBlocked()`：屏蔽词**子串命中**即拦截，站点返回空结果集。
@@ -9,7 +9,7 @@
 「token 级同义词字典 → OR 召回」模式）。离线目录的匹配本就是"任一词命中即召回"，
 因此把命中词的同义词也加入词集，等价于 OR 扩召回。增强仅在数据存在时生效。
 
-数据文件：`<KNOWLEDGE_DATA_DIR>/zzk_search_meta.json`
+数据文件：`<KNOWLEDGE_DATA_DIR>/search_meta.json`
   {"version": 1, "exported_at": "...", "synonyms": {"词": "同义词"}, "block_words": ["..."]}
 数据由 `scripts/export_search_meta.py` 从站点库导出（需站点 DB 在线）；
 文件缺失或损坏时不扩词、不拦截——绝不因元数据问题让检索瘫痪。
@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-META_FILENAME = "zzk_search_meta.json"
+META_FILENAME = "search_meta.json"
 
 
 def _zh_terms(text: str) -> set[str]:

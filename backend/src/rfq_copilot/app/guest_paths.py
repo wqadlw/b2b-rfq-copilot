@@ -11,10 +11,10 @@ import inspect
 import re
 from typing import Any
 
-from rfq_copilot.adapters.zhaozhenkong_offline.zzk_cases import (
+from rfq_copilot.adapters.vacuum_b2b_offline.cases import (
     detect_case_query as detect_case_query,
 )
-from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import (
+from rfq_copilot.adapters.vacuum_b2b_offline.solutions import (
     detect_solution_query as detect_solution_query,
 )
 from rfq_copilot.core.agent.graph import _humanize_spec_value

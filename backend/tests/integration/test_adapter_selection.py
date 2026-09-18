@@ -4,8 +4,8 @@ from collections.abc import Iterator
 
 import pytest
 
+from rfq_copilot.adapters.vacuum_b2b_offline.catalog import OfflineProductCatalog
 from rfq_copilot.adapters.vacuum_b2b_sample.adapter import VacuumSampleProductCatalog
-from rfq_copilot.adapters.zhaozhenkong_offline.zzk_catalog import ZzkProductCatalog
 from rfq_copilot.app.runtime import build_runtime
 from rfq_copilot.config.settings import get_settings
 
@@ -44,12 +44,12 @@ def test_adapter_env_selects_real_channel(monkeypatch: pytest.MonkeyPatch, clean
 
 def test_offline_override_applies_to_demo_only(monkeypatch: pytest.MonkeyPatch, clean_settings: None, tmp_path) -> None:
     """两条数据路径不得混用：真通道模式不得被离线导出覆盖。"""
-    data_dir = tmp_path / "zzk"
+    data_dir = tmp_path / "knowledge"
     data_dir.mkdir()
 
     _set(monkeypatch, ADAPTER="demo", KNOWLEDGE_DATA_DIR=str(data_dir))
     demo_runtime = build_runtime()
-    assert isinstance(demo_runtime.deps.catalog, ZzkProductCatalog)
+    assert isinstance(demo_runtime.deps.catalog, OfflineProductCatalog)
 
     _set(monkeypatch, ADAPTER="vacuum_b2b_sample", KNOWLEDGE_DATA_DIR=str(data_dir), **SITE_ENV)
     real_runtime = build_runtime()

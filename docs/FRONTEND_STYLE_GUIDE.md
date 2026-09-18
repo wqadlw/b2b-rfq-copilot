@@ -63,7 +63,7 @@ font-family: "JetBrains Mono", ui-monospace, monospace;                     /* �
 ## 5. 形状与阴影
 
 ```text
-圆角：**全档 3px**（2026-09-18 起，对齐找真空全站铁律 ≤3px；实现=@theme 覆盖 --radius-sm~2xl=3px，rounded-full 语义圆除外。原 8/12/16px 分档退役）。发送按钮为自适应宽度圆角矩形（min-width 60px、图标+"发送"文字）
+圆角：**全档 3px**（2026-09-18 起，对齐全站铁律 ≤3px；实现=@theme 覆盖 --radius-sm~2xl=3px，rounded-full 语义圆除外。原 8/12/16px 分档退役）。发送按钮为自适应宽度圆角矩形（min-width 60px、图标+"发送"文字）
 边框：1px solid var(--border)（细边框优先于阴影）
 阴影：0 1px 2px rgba(0,0,0,.04)（仅悬浮态加重到 0 4px 12px rgba(0,0,0,.08)）
 间距：4px 网格（4/8/12/16/24/32）；页面留白 24px 起

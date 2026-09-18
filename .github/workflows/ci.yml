@@ -52,7 +52,7 @@ jobs:
       - run: uv run lint-imports
 
   frontend:
-    name: frontend · lint + build
+    name: frontend · lint + test + build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +68,11 @@ jobs:
         working-directory: frontend
       - run: pnpm lint
         working-directory: frontend
+      - run: pnpm test
+        working-directory: frontend
       - run: pnpm build
+        working-directory: frontend
+      - run: pnpm build:widget
         working-directory: frontend
 
   repo-policy:
