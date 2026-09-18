@@ -347,7 +347,7 @@ export function ChatWidget({
         ref={listRef}
         onScroll={onListScroll}
         aria-live="polite"
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4"
       >
         {empty && (
           <div className="flex flex-col items-center gap-3 pt-10 text-center">
@@ -514,7 +514,7 @@ export function ChatWidget({
       ) : (
         !userRef &&
         showLoginHint && (
-          <div className="flex items-center justify-between border-t border-line bg-primary-light/40 px-4 py-1.5 text-xs text-ink-secondary">
+          <div className="flex flex-wrap items-center justify-between gap-1 border-t border-line bg-primary-light/40 px-4 py-1.5 text-xs text-ink-secondary">
             <span>登录后可让 AI 匹配供应商并创建询盘</span>
             <span className="flex items-center gap-2">
               {loginUrl !== "" && (
@@ -602,7 +602,7 @@ function CardStack({
     ? cards.slice(safePage * CARDS_PER_PAGE, (safePage + 1) * CARDS_PER_PAGE)
     : cards.slice(0, CARDS_COLLAPSED);
   return (
-    <div className="ml-8 flex w-full flex-col gap-2">
+    <div className="ml-8 flex flex-col gap-2">
       {visible.map((card, idx) =>
         card.kind === "product" ? (
           <ProductCard key={card.url || idx} card={card} onInquiry={onInquiry} />
