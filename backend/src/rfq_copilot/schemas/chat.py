@@ -23,6 +23,9 @@ class ChatRequest(BaseModel):
     contact: ContactInput | None = None
     quantity: int | None = None
     action: Literal["confirm_inquiry", "cancel_inquiry"] | None = None
+    # QA-0003：确认门行内编辑回传（白名单合并规则见 03-api-spec「行内编辑回传」）；
+    # graph 侧 resume 后做服务端校验（非白名单键/不合法值静默忽略）
+    draft_override: dict[str, Any] | None = None
 
 
 class SessionCreateRequest(BaseModel):

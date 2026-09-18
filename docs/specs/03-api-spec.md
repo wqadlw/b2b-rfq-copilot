@@ -52,6 +52,16 @@
 
 **确认交互**：客户端收到 `inquiry_confirm` 后渲染确认卡片；用户确认后携带 `confirm_id` 发起下一轮 `POST /chat/stream`（`message` 置空、`action: "confirm_inquiry"` 或 `"cancel_inquiry"`）。草稿变更（改数量/联系方式）= 新一轮澄清，重新出 `inquiry_confirm`。
 
+**行内编辑回传（resume 透传，QA-0003）**：确认/取消请求体可携带 `draft_override` 对象，对确认门草稿做白名单合并：
+
+```json
+{ "session_id": "sess_xxx", "message": "", "action": "confirm_inquiry", "draft_override": { "quantity": 20, "contact_name": "张三", "contact_phone": "13800000000" } }
+```
+
+- 白名单字段：`quantity`（int，0 < q ≤ 100000）/ `contact_name`（str，≤50 字）/ `contact_phone`（数字串 7-20 位）；非白名单键与不合法值**静默忽略**（服务端校验为准，前端不做二次校验依赖）
+- 合并发生在 `confirm_inquiry` 通过之后、落库创建之前；合并后缺必填字段 → 重新出 `inquiry_confirm`（带更新后的草稿）
+- 未携带 `draft_override` 或为空对象 = 原草稿直接确认，行为不变
+
 ## 3. Widget 配置
 
 ### GET /api/v1/ui-config

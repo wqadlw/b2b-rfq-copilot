@@ -408,7 +408,8 @@ def create_app() -> FastAPI:
         config: dict[str, Any] = {"configurable": {"thread_id": body.session_id}}
         if body.action:
             # resume an interrupted confirmation (interrupt()/Command pattern)
-            graph_input: Any = Command(resume={"action": body.action})
+            # QA-0003：draft_override 随 resume 透传进 graph（白名单合并由确认门执行）
+            graph_input: Any = Command(resume={"action": body.action, "draft_override": body.draft_override})
         else:
             graph_input = {
                 "session_id": body.session_id,

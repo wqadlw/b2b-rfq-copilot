@@ -113,6 +113,10 @@ class DemoInquirySink(InquirySinkPort):
                 "idempotency_key": draft.idempotency_key,
                 "user_ref": draft.user_ref,
                 "lead_score": draft.lead_score,
+                # QA-0003 观测面：记录草稿业务字段，供确认门行内编辑合并的回归测试断言
+                "product_id": draft.product_id,
+                "quantity": draft.quantity,
+                "contact": draft.contact.model_dump() if draft.contact is not None else None,
             }
         )
         logger.info("demo inquiry created: %s", inquiry_id)
