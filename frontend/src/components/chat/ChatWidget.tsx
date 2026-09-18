@@ -31,6 +31,15 @@ import type { ChatMessage, UiConfig } from "../../lib/types";
 
 const NEAR_BOTTOM_PX = 80;
 
+// 输入框轮播占位语：采购高频问法轮播展示（每 4s 切换，busy 时固定"正在生成…"）
+const PLACEHOLDER_ROTATIONS: string[] = [
+  "找一台无油真空泵…",
+  "旋片泵和干式螺杆泵怎么选…",
+  "想要一套高真空机组方案…",
+  "分子泵维修保养找谁…",
+  "采购真空阀门，帮忙询价…",
+];
+
 function productName(productId: string | number): string {
   return DEMO_PRODUCT_NAMES[String(productId)] ?? `产品 ${productId}`;
 }
@@ -86,6 +95,15 @@ export function ChatWidget({
   const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
   // 生产态游客登录引导：用户可关闭（会话内不再出现）
   const [showLoginHint, setShowLoginHint] = useState(true);
+  // 轮播占位语下标：4s 切换（busy 时暂停轮播，placeholder 固定"正在生成…"）
+  const [phIndex, setPhIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setPhIndex((i) => (i + 1) % PLACEHOLDER_ROTATIONS.length);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -547,7 +565,7 @@ export function ChatWidget({
               event.target.style.height = `${Math.min(event.target.scrollHeight, 120)}px`;
             }}
             onKeyDown={onKeyDown}
-            placeholder={busy ? "正在生成…" : "描述您的采购需求，如：找一台无油真空泵…"}
+            placeholder={busy ? "正在生成…" : PLACEHOLDER_ROTATIONS[phIndex]}
             className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-20 text-base focus:outline-none focus:ring-2 focus:ring-primary sm:text-sm"
           />
           {busy ? (
