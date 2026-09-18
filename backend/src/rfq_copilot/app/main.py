@@ -120,10 +120,13 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="b2b-rfq-copilot", version="0.1.0", lifespan=lifespan)
 
-    # CORS：宿主站点跨域嵌入（M4-c）；凭据头部走显式白名单方式，不使用通配 *
+    # CORS（QA-0001 / ADR-0005）：永不通配源+凭证。生产由 CORS_ALLOW_ORIGINS 显式
+    # 白名单；未配置时仅放行本机开发源（localhost/127.0.0.1），默认拒绝其余跨域。
+    cors_origins = [o.strip() for o in get_settings().cors_allow_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"https?://.*",
+        allow_origins=cors_origins,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

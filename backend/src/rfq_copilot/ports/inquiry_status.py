@@ -1,4 +1,4 @@
-"""InquiryStatusPort (阶段三·三)：询盘状态查询（只读）。
+"""InquiryStatusPort（第 6 端口，ADR-0006 正式纳管）：询盘状态查询（只读）。
 
 按 session_id 查询该会话创建的询盘及进展——session_id 即游客凭证，
 无需登录即可查自己会话产生的询盘（不泄露其它会话数据）。

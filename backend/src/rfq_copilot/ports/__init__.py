@@ -1,4 +1,8 @@
-"""Engine ports. Core depends only on this package (import-linter enforced)."""
+"""Engine ports. Core depends only on this package (import-linter enforced).
+
+Six ports per ADR-0006: catalog / suppliers / knowledge / inquiry_sink /
+lead_distribution / inquiry_status. Adding a 7th requires a new ADR.
+"""
 
 from rfq_copilot.ports.errors import (
     CapabilityDisabledError,
@@ -29,6 +33,7 @@ from rfq_copilot.ports.inquiry_sink import (
     InquiryResult,
     InquirySinkPort,
 )
+from rfq_copilot.ports.inquiry_status import InquiryStatusPort
 from rfq_copilot.ports.knowledge_source import (
     DocType,
     IngestScope,
@@ -76,6 +81,7 @@ __all__ = [
     "InquiryDraft",
     "InquiryResult",
     "InquirySinkPort",
+    "InquiryStatusPort",
     "KnowledgeDocument",
     "KnowledgeSourcePort",
     "LeadCandidate",

@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     checkpointer_sqlite_path: str = ".data/checkpoints.sqlite"
     checkpointer_postgres_dsn: str = ""
     ai_ticket_secret: str = ""  # E1 鉴权桥：与找真空 .env 的 AI_TICKET_SECRET 同值；空=不验签（向后兼容）
+    # QA-0001 / ADR-0005：CORS 显式白名单（逗号分隔，如
+    # https://zhaozhenkong.com,https://www.zhaozhenkong.com）；空=仅本机开发源放行
+    cors_allow_origins: str = ""
     # postgresql://user:***@host:5432/db（postgres 后端必填）
 
     langfuse_enabled: bool = False
