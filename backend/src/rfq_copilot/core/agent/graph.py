@@ -16,8 +16,6 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
-from rfq_copilot.adapters.zhaozhenkong_offline.zzk_cases import detect_case_query
-from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import detect_solution_query
 from rfq_copilot.core.agent.llm import LLMClient
 from rfq_copilot.core.agent.routing_guards import (
     INQUIRY_CREATE_MARKERS,
@@ -37,6 +35,7 @@ from rfq_copilot.core.rag.compare import build_compare_matrix, render_compare_an
 from rfq_copilot.core.rag.pipeline import RAGPipeline
 from rfq_copilot.core.rag.spec_matcher import extract_spec_criteria, match_products
 from rfq_copilot.ports.errors import ConfigError, CopilotError
+from rfq_copilot.ports.industry_knowledge import CasesPort, SolutionsPort
 from rfq_copilot.ports.inquiry_sink import AiExtract, Contact, InquiryDraft, InquirySinkPort
 from rfq_copilot.ports.lead_distribution import LeadDistributionPort
 from rfq_copilot.ports.product_catalog import ProductCatalogPort, ProductSearchQuery
@@ -158,8 +157,8 @@ class GraphDeps:
     rag: RAGPipeline | None = None
     inquiry_sink: InquirySinkPort | None = None
     lead_distribution: LeadDistributionPort | None = None
-    solutions: Any | None = None  # 行业方案目录（ZzkSolutionDirectory；离线知识资产）
-    cases: Any | None = None  # 客户案例目录（ZzkCaseDirectory；离线知识资产）
+    solutions: SolutionsPort | None = None  # 行业方案目录（端口；离线 JSON 适配器实现）
+    cases: CasesPort | None = None  # 客户案例目录（端口；离线 JSON 适配器实现）
     inquiry_status: Any | None = None  # 询盘状态查询（InquiryStatusPort；真通道专用）
     poisoned_ids: frozenset[str] = field(default_factory=frozenset)
 
@@ -337,7 +336,7 @@ def _respond_node(deps: GraphDeps) -> Any:
             tool_calls.append("get_solution")
             events.append(("tool_call", {"tool": "get_solution", "status": "running"}))
             entities = (state.get("understanding") or {}).get("entities") or {}
-            industry = entities.get("industry") or detect_solution_query(message)
+            industry = entities.get("industry") or (deps.solutions.detect_query(message) if deps.solutions else None)
             solution = deps.solutions.by_industry(industry) if industry else None
             events.append(("tool_call", {"tool": "get_solution", "status": "done"}))
             if solution is None:
@@ -369,7 +368,9 @@ def _respond_node(deps: GraphDeps) -> Any:
             tool_calls.append("get_cases")
             events.append(("tool_call", {"tool": "get_cases", "status": "running"}))
             case_entities = (state.get("understanding") or {}).get("entities") or {}
-            case_industry = case_entities.get("industry") or detect_case_query(message)[0]
+            case_industry = case_entities.get("industry") or (
+                deps.cases.detect_query(message)[0] if deps.cases else None
+            )
             case_hits = deps.cases.by_industry_slug(case_industry)[:3]
             events.append(("tool_call", {"tool": "get_cases", "status": "done"}))
             if not case_hits:
@@ -845,7 +846,7 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
             "refusal_reason": None,
         }
     # 案例意图确定性路由：案例问法（+可选行业词）→ case_flow（0 token）
-    case_industry, case_matched = detect_case_query(message)
+    case_industry, case_matched = deps.cases.detect_query(message) if deps.cases else (None, False)
     if case_matched:
         return {
             "intent": "case_inquiry",
@@ -859,7 +860,7 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
             "refusal_reason": None,
         }
     # 方案意图确定性路由：行业词 + 方案问法 → solution_flow（0 token）
-    solution_industry = detect_solution_query(message)
+    solution_industry = deps.solutions.detect_query(message) if deps.solutions else None
     if solution_industry:
         return {
             "intent": "solution_inquiry",

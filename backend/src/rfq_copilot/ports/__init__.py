@@ -1,4 +1,4 @@
-"""Five engine ports. Core depends only on this package (import-linter enforced)."""
+"""Engine ports. Core depends only on this package (import-linter enforced)."""
 
 from rfq_copilot.ports.errors import (
     CapabilityDisabledError,
@@ -15,6 +15,12 @@ from rfq_copilot.ports.errors import (
     UpstreamAuthError,
     UpstreamInvalidResponseError,
     UpstreamUnavailableError,
+)
+from rfq_copilot.ports.industry_knowledge import (
+    Case,
+    CasesPort,
+    Solution,
+    SolutionsPort,
 )
 from rfq_copilot.ports.inquiry_sink import (
     AiExtract,
@@ -55,6 +61,8 @@ from rfq_copilot.ports.supplier_directory import (
 __all__ = [
     "AiExtract",
     "CapabilityDisabledError",
+    "Case",
+    "CasesPort",
     "ConfigError",
     "ConfirmationRequiredError",
     "Contact",
@@ -83,6 +91,8 @@ __all__ = [
     "ProductSearchResult",
     "ProductSummary",
     "RateLimitError",
+    "Solution",
+    "SolutionsPort",
     "SupplierDetail",
     "SupplierDirectoryPort",
     "SupplierSearchQuery",
