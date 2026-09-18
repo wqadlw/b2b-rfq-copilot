@@ -48,8 +48,31 @@ from rfq_copilot.schemas.chat import (
 from rfq_copilot.schemas.events import EventName, sse_text
 
 _RUNTIME: Runtime | None = None
-_LIMITER = SlidingWindowLimiter()
-_BUDGET = DailyTokenBudget(get_settings().llm_daily_token_budget)
+_LIMITER: SlidingWindowLimiter | None = None
+_BUDGET: DailyTokenBudget | None = None
+
+
+def _get_limiter() -> SlidingWindowLimiter:
+    """惰性构造限流器（QA-0008：import 期固化使日额度不可热更）。"""
+    global _LIMITER
+    if _LIMITER is None:
+        _LIMITER = SlidingWindowLimiter()
+    return _LIMITER
+
+
+def _get_budget() -> DailyTokenBudget:
+    """惰性构造预算，跟随 get_settings() 当前值；配置刷新后调 reset_rate_limit_state()。"""
+    global _BUDGET
+    if _BUDGET is None:
+        _BUDGET = DailyTokenBudget(get_settings().llm_daily_token_budget)
+    return _BUDGET
+
+
+def reset_rate_limit_state() -> None:
+    """配置热更后由运维/测试显式调用：下一次请求按新 Settings 重建预算。"""
+    global _LIMITER, _BUDGET
+    _LIMITER = None
+    _BUDGET = None
 
 
 def _resolve_user_ref(
@@ -147,7 +170,7 @@ def create_app() -> FastAPI:
         body.user_ref, _ticket_reason = _resolve_user_ref(
             body.user_ref, body.ai_ticket, secret=get_settings().ai_ticket_secret
         )
-        if not _LIMITER.allow(session_id=body.session_id, ip=request.client.host if request.client else None):
+        if not _get_limiter().allow(session_id=body.session_id, ip=request.client.host if request.client else None):
 
             async def _limited() -> AsyncIterator[str]:
                 yield sse_text([("error", {"code": "RATE_LIMITED", "message": "请求过于频繁，请稍后再试"})])
@@ -359,7 +382,7 @@ def create_app() -> FastAPI:
         # budget; over budget -> wechat guidance, no LLM call this turn.
         if body.user_ref and not body.action:
             rtb = get_runtime()
-            if _BUDGET.remaining(body.user_ref) <= 0:
+            if _get_budget().remaining(body.user_ref) <= 0:
                 rtb.store.append_message(body.session_id, "user", body.message)
                 wechat = rtb.manifest.chat.wechat
                 budget_answer = "您今天的 AI 使用额度已用完，明天恢复。如需立即咨询，可扫码添加专属工程师一对一响应。"
