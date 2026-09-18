@@ -35,9 +35,9 @@ JetBrains Mono（@fontsource，参数/字段/Trace ID）
 | `--text-primary` | `#18181B` | `#F4F4F5` | — |
 | `--text-secondary` | `#52525B` | `#A1A1AA` | — |
 | `--text-muted` | `#A1A1AA` | `#71717A` | — |
-| `--primary` | `#F5720A` | `#F5720A` | 主色（2026-09-18 站点白标统一：找真空品牌橙；原 `#2563EB` 通用蓝退役） |
-| `--primary-hover` | `#D96409` | `#D96409` | — |
-| `--primary-light` | `#FDEADA` | `#FDEADA` | 主色浅底 |
+| `--primary` | `#2563EB` | `#3B82F6` | 主色（信任/工业/技术；2026-09-18 人类拍板保留通用蓝，站点品牌白标走 `ui-config.theme.primary`） |
+| `--primary-hover` | `#1D4ED8` | `#2563EB` | — |
+| `--primary-light` | `#DBEAFE` | `#1E3A5F` | 主色浅底 |
 | `--accent` | `#06B6D4` | `#22D3EE` | 点缀（AI/数据高亮） |
 | `--success` | `#16A34A` | `#22C55E` | 询盘创建成功 / capability enabled |
 | `--warning` | `#D97706` | `#F59E0B` | 能力禁用提示 / merchant 信任标 |
