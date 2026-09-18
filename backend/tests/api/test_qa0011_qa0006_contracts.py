@@ -13,7 +13,7 @@ from typing import get_args
 
 import pytest
 from fastapi.testclient import TestClient
-from tests.conftest import make_deps, understanding
+from conftest import make_deps, understanding  # noqa: I001  (pytest prepend 惯例，同 unit/integration)
 
 import rfq_copilot.app.main as main_module
 from rfq_copilot.app.runtime import build_runtime
