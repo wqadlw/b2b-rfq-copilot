@@ -31,6 +31,9 @@
 | `chatwoot/chatwoot` | 客服会话生命周期、人工接管工作台 |
 | `frappe/helpdesk` | 工单状态机与协作 |
 | `langgenius/dify` | 知识库产品形态、应用编排的产品化表达 |
+| `deresegetachew/quote-copilot` | 租户级 prompt 定制、RFQ 长等待用 Temporal 编排（本项以 checkpointer 覆盖同需求）——多租户/白标扩展时参考 |
+| `RudrenduPaul/electronics-rfq-agent` | 询盘"填充率审计报告"产物形态、Mock ERP 供评测——inquiry 完整度提示与 eval 增强参考 |
+| `RohanSai22/customer_support_system` | 限流双维度（用户+IP）、上下文自动压缩阈值（6k token）——limiter/history 裁剪参数标定参考 |
 
 ## 技术路线（冻结）
 
