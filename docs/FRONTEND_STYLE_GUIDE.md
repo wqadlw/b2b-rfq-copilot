@@ -35,7 +35,7 @@ JetBrains Mono（@fontsource，参数/字段/Trace ID）
 | `--text-primary` | `#18181B` | `#F4F4F5` | — |
 | `--text-secondary` | `#52525B` | `#A1A1AA` | — |
 | `--text-muted` | `#A1A1AA` | `#71717A` | — |
-| `--primary` | `#2563EB` | `#3B82F6` | 主色（信任/工业/技术） |
+| `--primary` | `#2563EB` | `#3B82F6` | 主色（信任/工业/技术；2026-09-18 人类拍板保留通用蓝，站点品牌白标走 `ui-config.theme.primary`） |
 | `--primary-hover` | `#1D4ED8` | `#2563EB` | — |
 | `--primary-light` | `#DBEAFE` | `#1E3A5F` | 主色浅底 |
 | `--accent` | `#06B6D4` | `#22D3EE` | 点缀（AI/数据高亮） |
@@ -63,7 +63,7 @@ font-family: "JetBrains Mono", ui-monospace, monospace;                     /* �
 ## 5. 形状与阴影
 
 ```text
-圆角：按钮/输入框 8px · 卡片/聊天气泡 12px · 大容器 16px
+圆角：**全档 3px**（2026-09-18 起，对齐找真空全站铁律 ≤3px；实现=@theme 覆盖 --radius-sm~2xl=3px，rounded-full 语义圆除外。原 8/12/16px 分档退役）。发送按钮为自适应宽度圆角矩形（min-width 60px、图标+"发送"文字）
 边框：1px solid var(--border)（细边框优先于阴影）
 阴影：0 1px 2px rgba(0,0,0,.04)（仅悬浮态加重到 0 4px 12px rgba(0,0,0,.08)）
 间距：4px 网格（4/8/12/16/24/32）；页面留白 24px 起
