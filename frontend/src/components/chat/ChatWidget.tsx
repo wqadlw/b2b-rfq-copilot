@@ -516,7 +516,7 @@ export function ChatWidget({
             }}
             onKeyDown={onKeyDown}
             placeholder={busy ? "对方正在输入…" : "描述您的采购需求，如：找一台无油真空泵…"}
-            className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-14 text-base focus:outline-none focus:ring-2 focus:ring-primary sm:text-sm"
+            className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-20 text-base focus:outline-none focus:ring-2 focus:ring-primary sm:text-sm"
           />
           {busy ? (
             <button
@@ -532,9 +532,10 @@ export function ChatWidget({
               type="submit"
               disabled={!input.trim()}
               aria-label="发送"
-              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg bg-primary text-white transition-all hover:bg-primary-hover active:scale-90 disabled:opacity-30"
+              className="absolute right-2 top-1/2 flex h-8 min-w-[60px] -translate-y-1/2 items-center justify-center gap-1 rounded-[3px] bg-primary px-2.5 text-white transition-all hover:bg-primary-hover active:scale-95 disabled:opacity-30"
             >
               <SendHorizonal className="h-4 w-4" />
+              <span className="text-xs font-medium">发送</span>
             </button>
           )}
         </div>
