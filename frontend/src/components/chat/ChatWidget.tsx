@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { AlertCircle, CheckCircle2, Loader2, Pencil, SendHorizonal, Sparkles, Square, X } from "lucide-react";
+import { AlertCircle, ArrowUp, CheckCircle2, Loader2, Pencil, Sparkles, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
 import {
@@ -553,9 +553,9 @@ export function ChatWidget({
           </div>
         )
       )}
-      {/* Input：busy 时发送钮变停止钮 */}
+      {/* Input：容器式 composer（企业级契约：容器承担边框+焦点态，按钮排容器内部不压字；busy 同槽变停止钮） */}
       <form onSubmit={onSubmit} className="border-t border-line bg-surface p-3">
-        <div className="relative">
+        <div className="flex items-end gap-1.5 rounded-xl border border-line bg-surface p-1.5 pl-2 transition-colors focus-within:border-primary focus-within:shadow-sm">
           <textarea
             ref={inputRef}
             value={input}
@@ -567,26 +567,25 @@ export function ChatWidget({
             }}
             onKeyDown={onKeyDown}
             placeholder={busy ? "正在生成…" : PLACEHOLDER_ROTATIONS[phIndex]}
-            className="min-h-11 w-full resize-none rounded-xl border border-line bg-surface py-2.5 pl-3 pr-20 text-base focus:outline-none focus:ring-2 focus:ring-primary sm:text-sm"
+            className="min-h-9 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm leading-5 text-ink placeholder:text-ink-muted focus:outline-none"
           />
           {busy ? (
             <button
               type="button"
               onClick={stop}
               aria-label="停止生成"
-              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg bg-ink text-white transition-transform active:scale-90"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-white transition-transform active:scale-90"
             >
-              <Square className="h-3 w-3" />
+              <Square className="h-3.5 w-3.5" />
             </button>
           ) : (
             <button
               type="submit"
               disabled={!input.trim()}
               aria-label="发送"
-              className="absolute right-2 top-1/2 flex h-8 min-w-[60px] -translate-y-1/2 items-center justify-center gap-1 rounded-[3px] bg-primary px-2.5 text-white transition-all hover:bg-primary-hover active:scale-95 disabled:opacity-30"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-all hover:bg-primary-hover active:scale-95 disabled:bg-line disabled:text-ink-muted"
             >
-              <SendHorizonal className="h-4 w-4" />
-              <span className="text-xs font-medium">发送</span>
+              <ArrowUp className="h-4 w-4" />
             </button>
           )}
         </div>
