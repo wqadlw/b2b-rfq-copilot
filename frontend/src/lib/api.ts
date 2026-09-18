@@ -3,19 +3,29 @@
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import type { ChatEventData, ChatEventName, UiConfig } from "./types";
 
-const ENDPOINT = (window as unknown as { RFQ_ENDPOINT?: string }).RFQ_ENDPOINT ?? "";
+/**
+ * 嵌入态基址必须调用时惰性读取：bootstrap 挂载时才写入 window.RFQ_ENDPOINT，
+ * 顶层 const 会在赋值前求值（bundle 加载顺序早于 mount()），固化成空串，
+ * 导致嵌入态请求打到宿主站点源（Laravel 404）。
+ */
+function endpoint(): string {
+  return (window as unknown as { RFQ_ENDPOINT?: string }).RFQ_ENDPOINT ?? "";
+}
 
 export async function fetchUiConfig(): Promise<UiConfig> {
-  const res = await fetch(`${ENDPOINT}/api/v1/ui-config`);
+  const res = await fetch(`${endpoint()}/api/v1/ui-config`);
   if (!res.ok) throw new Error(`ui-config ${res.status}`);
   return (await res.json()) as UiConfig;
 }
 
-export async function createSession(userRef: string | null = null): Promise<string> {
-  const res = await fetch(`${ENDPOINT}/api/v1/sessions`, {
+export async function createSession(
+  userRef: string | null = null,
+  aiTicket: string | null = null,
+): Promise<string> {
+  const res = await fetch(`${endpoint()}/api/v1/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_ref: userRef }),
+    body: JSON.stringify({ user_ref: userRef, ai_ticket: aiTicket }),
   });
   if (!res.ok) throw new Error(`sessions ${res.status}`);
   const data = (await res.json()) as { session_id: string };
@@ -50,7 +60,7 @@ export async function streamChat(options: StreamOptions): Promise<void> {
     action: options.action,
     draft_override: options.draftOverride ?? undefined,
   };
-  await fetchEventSource(`${ENDPOINT}/api/v1/chat/stream`, {
+  await fetchEventSource(`${endpoint()}/api/v1/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -74,7 +84,7 @@ export async function sendFeedback(
   messageId: string,
   feedback: "helpful" | "not_helpful",
 ): Promise<void> {
-  await fetch(`${ENDPOINT}/api/v1/feedback`, {
+  await fetch(`${endpoint()}/api/v1/feedback`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, message_id: messageId, feedback }),

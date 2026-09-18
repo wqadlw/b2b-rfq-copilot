@@ -37,3 +37,6 @@ eval/generated/
 
 # 本地运行数据（sqlite checkpointer 等）
 .data/
+
+# widget 嵌入产物（站点直接引用的交付物，入库随版本走）
+!frontend/dist-widget/

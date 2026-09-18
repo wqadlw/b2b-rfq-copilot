@@ -55,11 +55,19 @@ interface PendingConfirm {
   };
 }
 
-export function ChatWidget(): ReactElement {
+export function ChatWidget({
+  initialUserRef,
+  aiTicket,
+}: {
+  /** 宿主站点注入的初始身份（嵌入模式由 blade 按 auth 状态传入） */
+  initialUserRef?: string;
+  /** E1 鉴权桥：宿主签发的 HMAC 短时票据，创建会话时透传验签 */
+  aiTicket?: string;
+} = {}): ReactElement {
   const [config, setConfig] = useState<UiConfig | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   // 分级访问演示：真实站点由宿主签发 user_ref；demo 用模拟登录按钮切换游客/登录态
-  const [userRef, setUserRef] = useState<string | null>(null);
+  const [userRef, setUserRef] = useState<string | null>(initialUserRef ?? null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -73,7 +81,24 @@ export function ChatWidget(): ReactElement {
 
   useEffect(() => {
     void (async () => {
-      const cfg = await fetchUiConfig();
+      // 审查修复：ui-config 拉取失败（宿主未配 endpoint/后端抖动）时用内置兜底，
+      // 保证聊天面板（含输入框）永不空白——这是嵌入态的容错底线。
+      let cfg: UiConfig;
+      try {
+        cfg = await fetchUiConfig();
+      } catch {
+        cfg = {
+          adapter: "fallback",
+          display_name: "AI 采购助手",
+          chat: {
+            welcome_message: "您好，我是找真空 AI 采购助手。可以帮您找产品、查方案、发起询盘。",
+            suggested_questions: ["真空泵有哪些？", "食品加工有什么解决方案", "半导体行业有没有案例"],
+          },
+          theme: { primary: null },
+          capabilities: {},
+          inquiry: { guest_allowed: true },
+        } as unknown as UiConfig;
+      }
       setConfig(cfg);
       // localStorage 恢复（刷新不丢消息）
       const saved = localStorage.getItem("rfq-messages");
@@ -88,7 +113,7 @@ export function ChatWidget(): ReactElement {
           }
         } catch { /* 解析失败走新建 */ }
       }
-      const session = await createSession(userRef);
+      const session = await createSession(userRef, aiTicket);
       setSessionId(session);
       setMessages([{ role: "assistant", content: cfg.chat.welcome_message ?? "您好，我是询盘助手。" }]);
     })();
@@ -164,7 +189,7 @@ export function ChatWidget(): ReactElement {
     let sid = sessionId;
     if (sid === null) {
       try {
-        sid = await createSession(userRef);
+        sid = await createSession(userRef, aiTicket);
         setSessionId(sid);
       } catch {
         updateLast({ content: "无法连接引擎，请确认服务已启动后重试。", statusLine: undefined });
@@ -314,7 +339,7 @@ export function ChatWidget(): ReactElement {
         ref={listRef}
         onScroll={onListScroll}
         aria-live="polite"
-        className="flex-1 space-y-4 overflow-y-auto p-4"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
       >
         {empty && (
           <div className="flex flex-col items-center gap-3 pt-10 text-center">

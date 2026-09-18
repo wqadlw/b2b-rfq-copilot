@@ -155,8 +155,32 @@ async def init_checkpointer(runtime: Runtime, settings: Any | None = None) -> No
     backend = cfg.checkpointer_backend
     if backend == "memory":
         return
+    if backend == "postgres":
+        # 生产多实例模式：LangGraph 官方 AsyncPostgresSaver + 连接池（长生命周期，
+        # 不走 from_conn_string 上下文管理器）。DSN 缺失大声失败——半配置不得静默降级。
+        dsn = cfg.checkpointer_postgres_dsn
+        if not dsn:
+            raise ConfigError("checkpointer_backend=postgres requires CHECKPOINTER_POSTGRES_DSN")
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from psycopg import AsyncConnection
+        from psycopg.rows import dict_row
+        from psycopg_pool import AsyncConnectionPool
+
+        pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] = AsyncConnectionPool(
+            conninfo=dsn,
+            open=False,
+            kwargs={"autocommit": True, "row_factory": dict_row},
+        )
+        await pool.open()
+        pg_saver: Any = AsyncPostgresSaver(pool)
+        await pg_saver.setup()
+        runtime.checkpointer = pg_saver
+        runtime.checkpointer_conn = pool
+        runtime.graph = build_graph(runtime.deps, checkpointer=pg_saver)
+        return
+
     if backend != "sqlite":
-        raise ConfigError(f"unsupported checkpointer_backend: {backend!r} (expected memory|sqlite)")
+        raise ConfigError(f"unsupported checkpointer_backend: {backend!r} (expected memory|sqlite|postgres)")
 
     import aiosqlite
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -175,7 +199,7 @@ async def close_checkpointer(runtime: Runtime) -> None:
     """Release the durable checkpointer connection (no-op for memory)."""
     conn = runtime.checkpointer_conn
     if conn is not None:
-        await conn.close()
+        await conn.close()  # aiosqlite Connection 与 psycopg AsyncConnectionPool 均为 awaitable close
         runtime.checkpointer_conn = None
 
 
