@@ -7,7 +7,7 @@
 ## 背景
 
 repo policy 扫描器（"private site name" 规则）自 `ai/glm/zzk-knowledge-export` 合入后持续红
-（58 处命中、22 文件）：知识导出战役把私有站点标识（`zhaozhenkong`、`昊志机械`、`zzk` 前缀、
+（58 处命中、22 文件）：知识导出战役把私有站点标识（站点域名、供应商品牌、`zzk` 前缀、
 本机绝对路径）带进了公开仓库的适配器包名、import 路径、数据文件名、doc_id 前缀、docstring、
 测试与脚本。master CI 因此 4 天处于"门禁失效"状态——红着的门禁等于没有门禁。
 
@@ -16,8 +16,8 @@ policy §2 明文：真实生产域名、内部路径、站点私有实现细节
 
 ## 决策
 
-1. **包改名**：`adapters/zhaozhenkong_offline/` → `adapters/vacuum_b2b_offline/`
-   （与姊妹适配器 `vacuum_b2b_sample` 同族命名）。
+1. **包改名**：`adapters/<旧站点名>_offline/` → `adapters/vacuum_b2b_offline/`
+   （与姊妹适配器 `vacuum_b2b_sample` 同族命名；旧名含站点标识，仅存于 git 历史）。
 2. **模块去前缀**：`zzk_catalog/zzk_cases/zzk_solutions/zzk_suppliers.py` → `catalog/cases/solutions/suppliers.py`。
 3. **类名去前缀**：`Zzk*` → `Offline*`（OfflineProductCatalog / OfflineCaseDirectory /
    OfflineSolutionDirectory / OfflineSupplierDirectory）；工厂函数 `load_zzk_catalog` → `load_offline_catalog`。
@@ -25,8 +25,8 @@ policy §2 明文：真实生产域名、内部路径、站点私有实现细节
    `zzk_knowledge.json` → `knowledge.json`；`zzk_search_meta.json` → `search_meta.json`；
    `zzk_cases.json` → `cases.json`；`zzk_solutions.json` → `solutions.json`；
    doc_id 前缀 `zzk-*` → `offline-*`；输出目录 `zzk_rag_data` → `rag_data`。
-5. **路径泄密修复**：`suppliers.py` 硬编码开发机绝对路径
-   `D:\AAAAA\zhaozhenkong\...` → 环境变量 `SUPPLIER_SEEDER_PATH`（缺省相对占位路径，
+5. **路径泄密修复**：`suppliers.py` 硬编码开发机绝对路径（指向私有站点仓库）
+   → 环境变量 `SUPPLIER_SEEDER_PATH`（缺省相对占位路径，
    文件缺失时回退 knowledge.json——与原行为一致）。
 6. **示例域中性化**：CORS 注释/测试/.env.example/ADR-0005 中的站点域名 → `your-domain.com`。
 7. **前端中性化**：cardMapper 测试供应商名、widget 默认欢迎语去站点品牌。

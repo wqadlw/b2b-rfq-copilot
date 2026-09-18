@@ -8,8 +8,8 @@
 ### Changed (2026-09-18)
 
 - **适配器与知识资产去品牌化**（ADR-0007，repo-policy 合规）：
-  `adapters/zhaozhenkong_offline` → `adapters/vacuum_b2b_offline`；`zzk_*` 模块/类名/数据文件名/
-  doc_id 前缀全部中性化；硬编码开发机路径改环境变量 `SUPPLIER_SEEDER_PATH`。
+  旧适配器包（含站点标识，具名见 git 历史）→ `adapters/vacuum_b2b_offline`；`zzk_*` 模块/类名/
+  数据文件名/doc_id 前缀全部中性化；硬编码开发机路径改环境变量 `SUPPLIER_SEEDER_PATH`。
   部署侧需用 `scripts/vacuum_b2b_export.py` 重新导出知识数据。
 - CI frontend job 补 `pnpm test`（vitest）+ `pnpm build:widget`（QA-0009）——前端测试与
   嵌入产物自此纳入自动化守护。
