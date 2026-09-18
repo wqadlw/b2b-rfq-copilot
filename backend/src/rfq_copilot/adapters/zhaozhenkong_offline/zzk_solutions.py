@@ -8,8 +8,9 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
+
+from rfq_copilot.ports.industry_knowledge import Solution
 
 SOLUTIONS_FILENAME = "zzk_solutions.json"
 
@@ -28,31 +29,6 @@ _INDUSTRY_ALIASES: dict[str, str] = {
     "医药生物": "yiyao",
     "化工": "huagong",
 }
-
-
-@dataclass(frozen=True)
-class Solution:
-    """一张方案卡的全部展示数据。"""
-
-    name: str
-    slug: str
-    industry_slug: str
-    industry_name: str
-    subtitle: str | None = None
-    pain_points: list[dict[str, str]] = field(default_factory=list)
-    topology: str | None = None
-    budget_min: float | None = None
-    budget_max: float | None = None
-    suppliers: list[str] = field(default_factory=list)
-    url: str = ""
-
-    @property
-    def budget_text(self) -> str | None:
-        if self.budget_min and self.budget_max:
-            return f"{self.budget_min:g}–{self.budget_max:g} 万"
-        if self.budget_min:
-            return f"{self.budget_min:g} 万起"
-        return None
 
 
 class ZzkSolutionDirectory:
@@ -120,6 +96,10 @@ class ZzkSolutionDirectory:
             if solution.industry_slug == industry_slug:
                 return solution
         return None
+
+    def detect_query(self, message: str) -> str | None:
+        """SolutionsPort：确定性方案意图检测（转发模块级函数，行业同义词在适配器内）。"""
+        return detect_solution_query(message)
 
 
 # 行业中文名缓存（resolve_industry 兜底用）：site 导出里 industries 已随文件提供；

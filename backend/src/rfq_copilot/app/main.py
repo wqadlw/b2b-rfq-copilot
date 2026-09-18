@@ -36,6 +36,7 @@ from rfq_copilot.app.runtime import (
 from rfq_copilot.app.sse_mapper import map_graph_stream
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.core.auth.ticket import verify_ticket
+from rfq_copilot.core.policies.refusal import RefusalPolicy, detect_capability_refusal
 from rfq_copilot.schemas.chat import (
     ChatRequest,
     FeedbackRequest,
@@ -96,14 +97,14 @@ def _check_internal_token(request: Request) -> None:
         )
 
 
-def _is_zero_token_intent(message: str) -> bool:
-    """Guest-allowed deterministic paths: price/lead-time/stock refusals are template-only.
+def _guest_refusal_hit(message: str, refusal_policies: dict[str, RefusalPolicy]) -> bool:
+    """QA-0004：游客 0-token 放行判定——与 graph 共用单一确定性决策。
 
-    Mirrors graph._understanding_from_tools markers — kept in sync intentionally (guest tier
-    must not call the LLM, so we approximate the same trigger set cheaply).
+    仅当消息命中「已禁用能力」的拒绝触发词时才放行进 graph（graph 必然以模板拒绝、
+    0 token）；能力开启（无策略）时返回 False，游客在门外即 login_required，
+    绝不触达 LLM。旧手抄 marker 镜像（_is_zero_token_intent）已废弃。
     """
-    markers = ("多少钱", "价格", "报价", "区间", "货期", "交期", "交货", "有货", "库存", "现货")
-    return any(m in message for m in markers)
+    return detect_capability_refusal(message, refusal_policies) is not None
 
 
 def create_app() -> FastAPI:
@@ -119,10 +120,13 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="b2b-rfq-copilot", version="0.1.0", lifespan=lifespan)
 
-    # CORS：宿主站点跨域嵌入（M4-c）；凭据头部走显式白名单方式，不使用通配 *
+    # CORS（QA-0001 / ADR-0005）：永不通配源+凭证。生产由 CORS_ALLOW_ORIGINS 显式
+    # 白名单；未配置时仅放行本机开发源（localhost/127.0.0.1），默认拒绝其余跨域。
+    cors_origins = [o.strip() for o in get_settings().cors_allow_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"https?://.*",
+        allow_origins=cors_origins,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -312,7 +316,7 @@ def create_app() -> FastAPI:
                 rtg.store.append_message(body.session_id, "assistant", result["answer"])
                 return await _guest_stream(result["answer"], result["events"])
 
-            if faq is None and not _is_zero_token_intent(body.message):
+            if faq is None and not _guest_refusal_hit(body.message, rtg.deps.refusal_policies):
                 rtg.store.append_message(body.session_id, "user", body.message)
                 guidance = (
                     "深度咨询需要登录后使用（免费注册）。登录后我可以为您：查产品参数、做选型对比、"
@@ -407,7 +411,8 @@ def create_app() -> FastAPI:
         config: dict[str, Any] = {"configurable": {"thread_id": body.session_id}}
         if body.action:
             # resume an interrupted confirmation (interrupt()/Command pattern)
-            graph_input: Any = Command(resume={"action": body.action})
+            # QA-0003：draft_override 随 resume 透传进 graph（白名单合并由确认门执行）
+            graph_input: Any = Command(resume={"action": body.action, "draft_override": body.draft_override})
         else:
             graph_input = {
                 "session_id": body.session_id,

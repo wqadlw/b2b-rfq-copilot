@@ -7,29 +7,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import _INDUSTRY_ALIASES
+from rfq_copilot.ports.industry_knowledge import Case
 
 CASES_FILENAME = "zzk_cases.json"
-
-
-@dataclass(frozen=True)
-class Case:
-    """一张案例卡的展示数据（客户已脱敏、指标已量化）。"""
-
-    case_id: int
-    title: str
-    industry_slug: str | None
-    industry_name: str
-    customer_name: str | None
-    challenge: str | None
-    result: str | None
-    metrics: list[dict[str, str]] = field(default_factory=list)
-    has_whitepaper: bool = False
-    supplier: str | None = None
-    url: str = ""
 
 
 class ZzkCaseDirectory:
@@ -85,6 +68,10 @@ class ZzkCaseDirectory:
             if hits:
                 return hits
         return list(self._cases)
+
+    def detect_query(self, message: str) -> tuple[str | None, bool]:
+        """CasesPort：确定性案例意图检测（转发模块级函数，行业同义词在适配器内）。"""
+        return detect_case_query(message)
 
 
 # 案例问法（与产品问法区分："用过/做过/案例/交付/效果"）

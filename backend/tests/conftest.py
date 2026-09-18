@@ -66,3 +66,56 @@ def understanding(intent: str, route: str, confidence: float = 0.9, **extra: Any
         "refusal_reason": None,
         **extra,
     }
+
+
+# ===== QA-0021：测试 hermetic（与宿主 .env / 进程环境解耦）=====
+# pydantic-settings 会读 CWD 下 .env 与进程环境变量；仓库根的 .env 指向真实站点，
+# 污染 pytest（脏 env 13F/270P）。此 autouse fixture 统一屏蔽并清 get_settings 缓存，
+# 保证净/脏环境跑 pytest 结果一致。
+_NEUTRAL_ENV_KEYS = [
+    "ADAPTER",
+    "AI_TICKET_SECRET",
+    "INTERNAL_API_TOKEN",
+    "INTERNAL_API_BASE_URL",
+    "KNOWLEDGE_DATA_DIR",
+    "CHECKPOINTER_BACKEND",
+    "CHECKPOINTER_SQLITE_PATH",
+    "CHECKPOINTER_POSTGRES_DSN",
+    "APP_ENV",
+    "APP_LOG_LEVEL",
+    "LLM_PROVIDER",
+    "LLM_BASE_URL",
+    "LLM_API_KEY",
+    "LLM_MODEL",
+    "LLM_DAILY_TOKEN_BUDGET",
+    "GUEST_TIER_ENABLED",
+    "EMBEDDING_PROVIDER",
+    "EMBEDDING_BASE_URL",
+    "EMBEDDING_API_KEY",
+    "EMBEDDING_MODEL",
+    "RERANK_PROVIDER",
+    "RERANK_BASE_URL",
+    "RERANK_API_KEY",
+    "RERANK_MODEL",
+    "DATABASE_URL",
+    "LANGFUSE_ENABLED",
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY",
+]
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_env(monkeypatch: pytest.MonkeyPatch):
+    from rfq_copilot.config.settings import Settings, get_settings
+
+    # 禁用 .env 文件加载（Settings(env_file=".env") 以 CWD 相对读取）
+    monkeypatch.setattr(
+        Settings,
+        "model_config",
+        {**Settings.model_config, "env_file": None},
+    )
+    for key in _NEUTRAL_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
