@@ -27,7 +27,7 @@ from rfq_copilot.core.manifest import Manifest
 from rfq_copilot.core.memory import SessionStore
 from rfq_copilot.core.policies.faq_matcher import FaqMatcher
 from rfq_copilot.core.policies.output_filter import filter_output
-from rfq_copilot.core.policies.refusal import RefusalPolicy, refusal_answer
+from rfq_copilot.core.policies.refusal import RefusalPolicy, detect_capability_refusal, refusal_answer
 from rfq_copilot.core.policies.supplier_match import match_suppliers
 from rfq_copilot.core.prompts import PromptRegistry
 from rfq_copilot.core.rag.citation import validate_citations
@@ -805,33 +805,20 @@ def _understand_node(deps: GraphDeps) -> Any:
 def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, Any] | None:
     """Deterministic shortcuts that bypass the LLM for tool-level intents (cost engineering)."""
     message = state.get("message", "")
-    policy_by_intent = {
-        intent: cap for cap, policy in deps.refusal_policies.items() for intent in policy.trigger_intents
-    }
-    for intent, capability in policy_by_intent.items():
-        markers = {
-            "price_inquiry": ("多少钱", "价格", "报价", "区间", "元"),
-            "discount_inquiry": ("折扣", "优惠"),
-            "lead_time_inquiry": ("货期", "交期", "交货", "多久", "几周", "能到"),
-            "stock_inquiry": ("有货", "库存", "现货"),
-        }.get(intent, ())
-        if any(m in message for m in markers):
-            reason = {
-                "pricing": "pricing_disabled",
-                "lead_time": "lead_time_disabled",
-                "stock": "stock_disabled",
-            }[capability]
-            return {
-                "intent": intent,
-                "confidence": 0.99,
-                "entities": {},
-                "missing_fields": [],
-                "route": "refuse_fabrication",
-                "needs_clarification": False,
-                "needs_human": False,
-                "human_reason": None,
-                "refusal_reason": reason,
-            }
+    # QA-0004：能力禁用拒绝走单一决策函数（与 app.main 游客门共用，杜绝镜像漂移）
+    refusal_hit = detect_capability_refusal(message, deps.refusal_policies)
+    if refusal_hit is not None:
+        return {
+            "intent": refusal_hit.intent,
+            "confidence": 0.99,
+            "entities": {},
+            "missing_fields": [],
+            "route": "refuse_fabrication",
+            "needs_clarification": False,
+            "needs_human": False,
+            "human_reason": None,
+            "refusal_reason": refusal_hit.reason,
+        }
     # 询盘状态查询：必须先于询盘创建判定（"我的询盘有人跟吗"含"询盘"二字）
     if detect_inquiry_status_query(message) and deps.inquiry_status is not None:
         return {
