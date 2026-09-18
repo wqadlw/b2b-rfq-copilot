@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     cors_allow_origins: str = ""
     # postgresql://user:***@host:5432/db（postgres 后端必填）
 
+    # QA-0007/0010：RAG 向量存储装配——"inmemory"（demo/CI）| "pgvector"（prod，HNSW）
+    rag_store: str = "inmemory"
+    rag_pgvector_dsn: str = ""  # rag_store=pgvector 时必填
+
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

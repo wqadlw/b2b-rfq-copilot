@@ -535,7 +535,7 @@ def create_app() -> FastAPI:
         rt = get_runtime()
         if rt.deps.rag is None:
             raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "知识库未启用"})
-        removed = rt.deps.rag.remove_doc(doc_id)
+        removed = await rt.deps.rag.remove_doc(doc_id)
         return {"doc_id": doc_id, "chunks_removed": removed}
 
     @app.get("/api/v1/analytics/summary")
