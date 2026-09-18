@@ -44,11 +44,17 @@
 | `retrieval` | `{"count": 4, "sources": [{"doc_id","title","trust"}]}` | 检索完成（trust=信任等级） |
 | `answer_delta` | `{"delta": "根据站内资料，"}` | 增量正文（拼接渲染） |
 | `citation` | `{"doc_id","title","section","trust","url?"}` | 单条引用（answer 中标注） |
+| `card` | `{"kind": "product\|supplier", ...}` | 结构化实体卡（产品/供应商档案卡，前端 ChatEventName 已消费） |
 | `inquiry_confirm` | `{"confirm_id": "cfm_xxx", "draft": {产品/数量/联系人/掩码电话}, "draft_json": "草稿原文 JSON 字符串（向后兼容保留）"}` | **确认门**：请求用户显式确认询盘草稿 |
 | `inquiry_created` | `{"inquiry_id": "1001", "state": "created"}` | 询盘创建成功（确认门通过后） |
 | `handoff` | `{"reason": "complex_selection", "priority": "high"}` | 转人工 |
 | `error` | `{"code": "UPSTREAM_TIMEOUT", "message": "…"}` | 错误（码表见 port-spec §8；Policy 类结果不走 error，走正常内容/模板） |
-| `done` | `{"finish_reason": "answered\|inquiry_created\|handoff\|error"}` | 流结束 |
+| `wechat_guidance` | `{"guidance": "…", "qrcode_url": "…", "contact_name": "…"}` | 询盘创建后微信一对一引导 |
+| `login_required` | `{"reason": "llm_turn", "suggestions": [...]}` | 游客触达需登录功能（0 token 引导，guest tier） |
+| `token_budget_exceeded` | `{"user_ref": "..."}` | 当日 token 预算耗尽（引导微信/明日再试） |
+| `done` | `{"finish_reason": "answered\|inquiry_created\|handoff\|error\|login_required\|rate_limited\|token_budget_exceeded\|human_serving"}` | 流结束 |
+
+> 事件全集与前端 `frontend/src/lib/types.ts` 的 `ChatEventName` 一一对应（14 名，QA-0006 收敛：后端 Literal == 实发集 == 前端冻结集，表驱动合同测锁定）。
 
 **确认交互**：客户端收到 `inquiry_confirm` 后渲染确认卡片；用户确认后携带 `confirm_id` 发起下一轮 `POST /chat/stream`（`message` 置空、`action: "confirm_inquiry"` 或 `"cancel_inquiry"`）。草稿变更（改数量/联系方式）= 新一轮澄清，重新出 `inquiry_confirm`。
 

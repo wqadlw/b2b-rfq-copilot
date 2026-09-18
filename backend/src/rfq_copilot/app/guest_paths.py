@@ -27,6 +27,7 @@ from rfq_copilot.core.agent.routing_guards import (
 from rfq_copilot.core.manifest import Manifest
 from rfq_copilot.core.rag.pipeline import RAGPipeline
 from rfq_copilot.ports.product_catalog import ProductCatalogPort
+from rfq_copilot.schemas.events import EventName
 
 # demo 词表（G1 触发词）——真实站点接入时由 manifest chat.free_search_keywords 配置
 # G1 触发词表：站点官方分类核心词 ∪ 同义词表用户词（2026-09-16 导入 49 条）∪ 常见简称。
@@ -142,7 +143,7 @@ async def guest_supplier_answer(mode: str, suppliers: Any) -> dict[str, Any]:
     """G3: 供应商列表/档案（0 token）。返回 SSE 事件载荷（含 card 结构化事件）。"""
     import inspect as _inspect
 
-    events: list[tuple[str, dict[str, Any]]] = []
+    events: list[tuple[EventName, dict[str, Any]]] = []
     if suppliers is None:
         return {"answer": "当前环境未接入供应商目录。", "events": events, "finish": "answered"}
     if mode == "list":
@@ -228,7 +229,7 @@ def looks_like_knowledge_query(message: str) -> bool:
 
 async def guest_search_answer(query: str, catalog: ProductCatalogPort | None, manifest: Manifest) -> dict[str, Any]:
     """G1: 直搜产品/编号查询（0 token）。返回 SSE 事件载荷。"""
-    events: list[tuple[str, dict[str, Any]]] = []
+    events: list[tuple[EventName, dict[str, Any]]] = []
     if catalog is None:
         return {"answer": "当前环境未接入产品库。", "events": events, "finish": "answered"}
 
@@ -322,7 +323,7 @@ async def guest_knowledge_answer(message: str, rag: RAGPipeline | None, manifest
         snippet = chunk.content[:80].replace("\n", " ")
         lines.append(f"{i}. 《{chunk.title}》（{chunk.trust_level}）：{snippet}…")
     lines.append("以上为原文摘录；登录后我将基于资料给出完整分析与建议。")
-    events: list[tuple[str, dict[str, Any]]] = [
+    events: list[tuple[EventName, dict[str, Any]]] = [
         ("retrieval", {"count": len(chunks[:3]), "trust": [c.trust_level for c in chunks[:3]]}),
         *(("citation", {"title": c.title, "trust": c.trust_level}) for c in chunks[:3]),
     ]
