@@ -1,8 +1,8 @@
-"""PHP var_export / short-array parser tests (zzk anti-corruption layer)."""
+"""PHP var_export / short-array parser tests (offline adapter anti-corruption layer)."""
 
 import pytest
 
-from rfq_copilot.adapters.zhaozhenkong_offline.php_array import (
+from rfq_copilot.adapters.vacuum_b2b_offline.php_array import (
     PhpParseError,
     extract_literal_span,
     parse_php_value,

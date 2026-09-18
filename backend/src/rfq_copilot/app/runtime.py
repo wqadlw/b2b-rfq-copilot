@@ -69,13 +69,13 @@ def _build_rag(settings: Any, manifest: Manifest) -> RAGPipeline | None:
 
 
 async def seed_demo(runtime: Runtime) -> None:
-    """Seed the in-memory store（demo 文档或 ZZK 真实知识集，skipped when already seeded）."""
+    """Seed the in-memory store（demo 文档或站点离线知识集，skipped when already seeded）."""
     rag = runtime.deps.rag
     if rag is None or rag._store.count() > 0:  # noqa: SLF001 — runtime owns its pipeline
         return
-    zzk_dir = get_settings().knowledge_data_dir
-    if zzk_dir:
-        payload = json.loads((Path(zzk_dir) / "zzk_knowledge.json").read_text(encoding="utf-8"))
+    knowledge_dir = get_settings().knowledge_data_dir
+    if knowledge_dir:
+        payload = json.loads((Path(knowledge_dir) / "knowledge.json").read_text(encoding="utf-8"))
         docs = [KnowledgeDocument(**d) for d in payload["documents"]]
     else:
         docs = list(demo_data.DOCS) + list(demo_data.POISON_DOCS)
@@ -98,12 +98,12 @@ def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> R
     module = _adapter_module(adapter)  # V2: enabled ports must have an implementation package
     ports = module.build_demo_ports()
     if adapter == "demo" and settings.knowledge_data_dir:
-        # ZZK 真实数据模式：产品目录切真实数据（KNOWLEDGE_DATA_DIR 非空时）
-        from rfq_copilot.adapters.zhaozhenkong_offline.zzk_catalog import ZzkProductCatalog
-        from rfq_copilot.adapters.zhaozhenkong_offline.zzk_suppliers import ZzkSupplierDirectory
+        # 站点离线真实数据模式：产品目录切真实数据（KNOWLEDGE_DATA_DIR 非空时）
+        from rfq_copilot.adapters.vacuum_b2b_offline.catalog import OfflineProductCatalog
+        from rfq_copilot.adapters.vacuum_b2b_offline.suppliers import OfflineSupplierDirectory
 
-        ports.catalog = ZzkProductCatalog(settings.knowledge_data_dir)
-        ports.suppliers = ZzkSupplierDirectory(settings.knowledge_data_dir)
+        ports.catalog = OfflineProductCatalog(settings.knowledge_data_dir)
+        ports.suppliers = OfflineSupplierDirectory(settings.knowledge_data_dir)
     client = llm or OpenAICompatLLM(
         base_url=settings.llm_base_url, api_key=settings.llm_api_key, model=settings.llm_model
     )
@@ -125,11 +125,11 @@ def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> R
     )
     if settings.knowledge_data_dir:
         # 行业方案/案例目录（demo 与真通道模式都注入：离线知识资产，不依赖站点在线）
-        from rfq_copilot.adapters.zhaozhenkong_offline.zzk_cases import ZzkCaseDirectory
-        from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import ZzkSolutionDirectory
+        from rfq_copilot.adapters.vacuum_b2b_offline.cases import OfflineCaseDirectory
+        from rfq_copilot.adapters.vacuum_b2b_offline.solutions import OfflineSolutionDirectory
 
-        deps.solutions = ZzkSolutionDirectory(settings.knowledge_data_dir)
-        deps.cases = ZzkCaseDirectory(settings.knowledge_data_dir)
+        deps.solutions = OfflineSolutionDirectory(settings.knowledge_data_dir)
+        deps.cases = OfflineCaseDirectory(settings.knowledge_data_dir)
     if ports.inquiry_status is not None:
         deps.inquiry_status = ports.inquiry_status
     checkpointer = MemorySaver()  # ephemeral default; init_checkpointer swaps in durable backends

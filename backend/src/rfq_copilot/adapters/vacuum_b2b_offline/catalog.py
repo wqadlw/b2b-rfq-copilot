@@ -1,7 +1,7 @@
-"""ZZK 真实产品目录（adapters/zhaozhenkong_offline）——从导出 JSON 构建ProductCatalogPort。
+"""站点离线产品目录（adapters/vacuum_b2b_offline）——从导出 JSON 构建 ProductCatalogPort。
 
-数据源：scripts/zhaozhenkong_export.py 的 --output-dir 产物 zzk_knowledge.json
-（857 documents 中 doc_type=product 的 359 款真实产品，params/detail 已 ETL 清洗）。
+数据源：scripts/vacuum_b2b_export.py 的 --output-dir 产物 knowledge.json
+（857 documents 中 doc_type=product 的 359 款产品，params/detail 已 ETL 清洗）。
 
 防腐层注意：本类不 import core（import-linter 契约），复用 demo 的 _zh_terms 匹配器
 思路以结构化实现；组合根（runtime）按 ProductCatalogPort 协议注入。
@@ -15,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from rfq_copilot.adapters.zhaozhenkong_offline.search_meta import SearchMeta
+from rfq_copilot.adapters.vacuum_b2b_offline.search_meta import SearchMeta
 from rfq_copilot.ports.product_catalog import (
     PriceDisplay,
     ProductCatalogPort,
@@ -25,7 +25,7 @@ from rfq_copilot.ports.product_catalog import (
     ProductSummary,
 )
 
-DEFAULT_DATA_DIR = ".ai/private/zzk_rag_data"
+DEFAULT_DATA_DIR = ".ai/private/rag_data"
 
 
 def _zh_terms(query: str) -> set[str]:
@@ -40,8 +40,8 @@ def _strip_html(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-class ZzkProductCatalog(ProductCatalogPort):
-    """真实找真空产品目录（内存态，进程启动时从导出 JSON 装载一次）。"""
+class OfflineProductCatalog(ProductCatalogPort):
+    """站点真实产品目录离线副本（内存态，进程启动时从导出 JSON 装载一次）。"""
 
     def __init__(self, data_dir: str | None = None) -> None:
         self._data_dir = Path(data_dir or DEFAULT_DATA_DIR)
@@ -54,7 +54,7 @@ class ZzkProductCatalog(ProductCatalogPort):
         return self._meta
 
     def _load(self) -> None:
-        payload_path = self._data_dir / "zzk_knowledge.json"
+        payload_path = self._data_dir / "knowledge.json"
         if not payload_path.is_file():
             return
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
@@ -68,7 +68,7 @@ class ZzkProductCatalog(ProductCatalogPort):
         for base_id, group in by_product.items():
             content_full = "\n".join(d["content"] for d in group)
             first = group[0]
-            product_id = base_id.replace("zzk-product-", "")
+            product_id = base_id.replace("offline-product-", "")
             name = first.get("title", "")
             # 从正文提取字段（导出时已结构化写入）
             fields: dict[str, str] = {}
@@ -76,7 +76,7 @@ class ZzkProductCatalog(ProductCatalogPort):
                 if "：" in line and len(line) < 120:
                     key, _, val = line.partition("：")
                     fields.setdefault(key.strip(), val.strip())
-            supplier_name = fields.get("供应商", "找真空供应商")
+            supplier_name = fields.get("供应商", "示例供应商")
             price_line = fields.get("价格", "请联系供应商询价")
             price_mode = "shown" if price_line.startswith("￥") or price_line.startswith("¥") else "contact"
             params = {k: v for k, v in fields.items() if k not in {"产品名称", "价格", "详情"} and v}
@@ -86,7 +86,7 @@ class ZzkProductCatalog(ProductCatalogPort):
                     name=name,
                     category_name="真空设备",
                     brand_name=params.get("品牌"),
-                    supplier_id="zzk-supplier",
+                    supplier_id="offline-supplier",
                     supplier_name=supplier_name,
                     specs=dict(list(params.items())[:6]),
                     price_display=PriceDisplay(
@@ -142,5 +142,5 @@ class ZzkProductCatalog(ProductCatalogPort):
 
 
 @lru_cache
-def load_zzk_catalog(data_dir: str | None = None) -> ZzkProductCatalog:
-    return ZzkProductCatalog(data_dir)
+def load_offline_catalog(data_dir: str | None = None) -> OfflineProductCatalog:
+    return OfflineProductCatalog(data_dir)

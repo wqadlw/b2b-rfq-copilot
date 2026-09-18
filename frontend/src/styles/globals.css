@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* Industrial AI Clean tokens (authority: docs/FRONTEND_STYLE_GUIDE.md §3)
-   2026-09-18 圆角刻度全档压平至 3px（找真空全站铁律 ≤3px，rounded-full 语义圆除外）。
+   2026-09-18 圆角刻度全档压平至 3px（全站铁律 ≤3px，rounded-full 语义圆除外）。
    主色保持通用蓝 #2563EB（2026-09-18 人类拍板：站点接入不改引擎默认主色，
    品牌白标走 ui-config.theme.primary 通道）。 */
 @theme {

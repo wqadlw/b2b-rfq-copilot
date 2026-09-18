@@ -1,7 +1,7 @@
 """行业知识资产端口（案例目录 / 行业方案目录）。
 
 DTO（Case/Solution）定义在 ports 侧，core 只依赖本包；
-zhaozhenkong_offline 适配器提供离线 JSON 实现（import-linter 强制 core 不触 adapters）。
+vacuum_b2b_offline 适配器提供离线 JSON 实现（import-linter 强制 core 不触 adapters）。
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
-"""ZZK 行业解决方案目录（离线导出 zzk_solutions.json，只读内存态）。
+"""站点行业解决方案目录（离线导出 solutions.json，只读内存态）。
 
 数据源：站点 Solution 表（status=1，含 pain_points/topology/关联供应商与深链）。
-导出：站点侧 `php artisan tinker` 查询 → KNOWLEDGE_DATA_DIR/zzk_solutions.json
+导出：站点侧 `php artisan tinker` 查询 → KNOWLEDGE_DATA_DIR/solutions.json
 （与 SearchSynonym 导出同模式；站点 DB 离线时沿用既有导出文件）。
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from rfq_copilot.ports.industry_knowledge import Solution
 
-SOLUTIONS_FILENAME = "zzk_solutions.json"
+SOLUTIONS_FILENAME = "solutions.json"
 
 # 行业同义词：用户口语 → industry_slug（如"锂电"→ lidian）
 _INDUSTRY_ALIASES: dict[str, str] = {
@@ -31,7 +31,7 @@ _INDUSTRY_ALIASES: dict[str, str] = {
 }
 
 
-class ZzkSolutionDirectory:
+class OfflineSolutionDirectory:
     """按行业检索方案；数据文件缺失/损坏时保持空目录（不抛错、不瘫痪）。"""
 
     def __init__(self, data_dir: str | None = None) -> None:
@@ -123,4 +123,4 @@ def detect_solution_query(message: str) -> str | None:
         return None
     if not any(marker in text for marker in ("方案", "配套", "整套", "成套", "产线", "系统怎么配", "系统配置")):
         return None
-    return ZzkSolutionDirectory.resolve_industry(text)
+    return OfflineSolutionDirectory.resolve_industry(text)

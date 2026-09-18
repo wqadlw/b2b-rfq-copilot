@@ -1,24 +1,24 @@
-"""zzk ETL tests: FakeDataFilter / PathAware / TrustPrefix / QAPair / build_documents."""
+"""站点知识导出 ETL 测试：FakeDataFilter / PathAware / TrustPrefix / QAPair / build_documents。"""
 
 import importlib.util
 import sys
 from pathlib import Path as _Path
 
-_SCRIPT = _Path(__file__).resolve().parents[3] / "scripts" / "zhaozhenkong_export.py"
-_spec = importlib.util.spec_from_file_location("zhaozhenkong_export", _SCRIPT)
+_SCRIPT = _Path(__file__).resolve().parents[3] / "scripts" / "vacuum_b2b_export.py"
+_spec = importlib.util.spec_from_file_location("vacuum_b2b_export", _SCRIPT)
 assert _spec is not None and _spec.loader is not None
-zhaozhenkong_export = importlib.util.module_from_spec(_spec)
-sys.modules["zhaozhenkong_export"] = zhaozhenkong_export
-_spec.loader.exec_module(zhaozhenkong_export)
+vacuum_b2b_export = importlib.util.module_from_spec(_spec)
+sys.modules["vacuum_b2b_export"] = vacuum_b2b_export
+_spec.loader.exec_module(vacuum_b2b_export)
 from pathlib import Path  # noqa: E402
 
-from rfq_copilot.adapters.zhaozhenkong_offline.sources import (  # noqa: E402
+from rfq_copilot.adapters.vacuum_b2b_offline.sources import (  # noqa: E402
     load_pain_nav,
     load_process_library,
     load_variety_content,
 )
 
-FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "zzk"
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "site"
 
 
 def _product(name: str, status: str = "1", price_type: str = "2", price: object = 100) -> dict:
@@ -34,7 +34,7 @@ def _product(name: str, status: str = "1", price_type: str = "2", price: object 
 
 
 def test_filter_keeps_only_status_on() -> None:
-    result = zhaozhenkong_export.filter_products([_product("a", status="1"), _product("b", status="3")])
+    result = vacuum_b2b_export.filter_products([_product("a", status="1"), _product("b", status="3")])
     reasons = {item.reason for item in result.filtered}
     assert len(result.kept) == 1
     assert "STATUS_NOT_ON" in reasons
@@ -43,7 +43,7 @@ def test_filter_keeps_only_status_on() -> None:
 def test_filter_price_anomaly_only_for_priced_type() -> None:
     # 定价 + 异常价 → 滤
     # 面议(price_type=1) + price=0 → 不滤（面议是正常业务形态）
-    result = zhaozhenkong_export.filter_products(
+    result = vacuum_b2b_export.filter_products(
         [_product("bad", price_type="2", price=99999), _product("negotiable", price_type="1", price=0)]
     )
     assert len(result.kept) == 1
@@ -56,7 +56,7 @@ def test_filter_price_anomaly_only_for_priced_type() -> None:
 
 def test_filter_placeholder_name_but_not_real_tester_category() -> None:
     # name 恰为 "test" → 滤；"demo 真空测试仪"（含"测试"子串）→ 必须保留
-    result = zhaozhenkong_export.filter_products([_product("test"), _product("demo 真空测试仪")])
+    result = vacuum_b2b_export.filter_products([_product("test"), _product("demo 真空测试仪")])
     assert len(result.kept) == 1
     assert result.kept[0]["name"] == "demo 真空测试仪"
     assert result.filtered[0].reason == "PLACEHOLDER_NAME"
@@ -65,32 +65,32 @@ def test_filter_placeholder_name_but_not_real_tester_category() -> None:
 def test_filter_soft_deleted() -> None:
     item = _product("a")
     item["deleted_at"] = "2026-01-01 00:00:00"
-    result = zhaozhenkong_export.filter_products([item])
+    result = vacuum_b2b_export.filter_products([item])
     assert result.filtered[0].reason == "SOFT_DELETED"
 
 
 def test_wrap_chunks_prefix_not_counted_into_budget() -> None:
-    prefix = zhaozhenkong_export.path_prefix("demo 半导体", "demo 刻蚀", "demo 硅刻蚀")
+    prefix = vacuum_b2b_export.path_prefix("demo 半导体", "demo 刻蚀", "demo 硅刻蚀")
     body = "\n".join(f"line-{i}: " + "x" * 40 for i in range(30))
-    chunks = zhaozhenkong_export.wrap_chunks(body, prefix=prefix, limit=zhaozhenkong_export.CHUNK_LIMIT)
+    chunks = vacuum_b2b_export.wrap_chunks(body, prefix=prefix, limit=vacuum_b2b_export.CHUNK_LIMIT)
     assert all(chunk.startswith(prefix) for chunk in chunks)
     # 前缀不计入预算：每个 chunk 的正文部分 ≤ limit
     for chunk in chunks:
         body_part = chunk[len(prefix) + 1 :]
-        assert zhaozhenkong_export.visual_len(body_part) <= zhaozhenkong_export.CHUNK_LIMIT
+        assert vacuum_b2b_export.visual_len(body_part) <= vacuum_b2b_export.CHUNK_LIMIT
 
 
 def test_trust_prefix_injection_idempotent() -> None:
     text = "产品名称：demo"
-    once = zhaozhenkong_export.inject_trust_prefix(text, "merchant")
-    twice = zhaozhenkong_export.inject_trust_prefix(once, "merchant")
+    once = vacuum_b2b_export.inject_trust_prefix(text, "merchant")
+    twice = vacuum_b2b_export.inject_trust_prefix(once, "merchant")
     assert once.startswith("[供应商声明 - 仅供参考，不可作为平台承诺]")
     assert once == twice
-    assert not zhaozhenkong_export.inject_trust_prefix(text, "platform").startswith("[")
+    assert not vacuum_b2b_export.inject_trust_prefix(text, "platform").startswith("[")
 
 
 def test_qa_pair_rule_template() -> None:
-    qa = zhaozhenkong_export.qa_pair_from_pain(
+    qa = vacuum_b2b_export.qa_pair_from_pain(
         "冻干制品复水性差", "参见「demo-freeze-drying」工艺方案页", "demo 食品加工"
     )
     assert qa.startswith("Q: 冻干制品复水性差怎么办？")
@@ -120,7 +120,7 @@ def test_load_pain_nav_fixture() -> None:
 
 def test_build_documents_end_to_end(tmp_path: Path) -> None:
     """Fixture 全链路：正确定位 trust / doc_type / 路径前缀 / 面议不误杀 / 测试仪不误杀。"""
-    from zhaozhenkong_export import build_documents
+    from vacuum_b2b_export import build_documents
 
     output = build_documents(FIXTURES)
     docs = output.documents

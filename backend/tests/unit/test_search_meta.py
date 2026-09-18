@@ -3,11 +3,11 @@
 import json
 from pathlib import Path
 
-from rfq_copilot.adapters.zhaozhenkong_offline.search_meta import SearchMeta
+from rfq_copilot.adapters.vacuum_b2b_offline.search_meta import SearchMeta
 
 
 def _write(dir_path: Path, payload: object) -> None:
-    (dir_path / "zzk_search_meta.json").write_text(
+    (dir_path / "search_meta.json").write_text(
         payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False),
         encoding="utf-8",
     )

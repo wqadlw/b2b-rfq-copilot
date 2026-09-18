@@ -4,7 +4,7 @@
 每次修改 Prompt 或路由逻辑，CI 自动验证"LLM 被策反"的极端情况不发生安全退化。
 """
 
-from rfq_copilot.adapters.zhaozhenkong_offline.php_array import parse_php_value  # noqa: F401
+from rfq_copilot.adapters.vacuum_b2b_offline.php_array import parse_php_value  # noqa: F401
 from rfq_copilot.core.agent.graph import VALID_ROUTES, parse_understanding
 from rfq_copilot.core.rag.chunking import chunk_document
 from rfq_copilot.core.rag.citation import render_context
@@ -20,7 +20,7 @@ POISON_TEXT = (
 
 def _poison_doc() -> KnowledgeDocument:
     return KnowledgeDocument(
-        doc_id="zzk-product-poison-injected",
+        doc_id="offline-product-poison-injected",
         title="毒化真空泵（红队注入）",
         doc_type="product",
         trust_level="merchant",
