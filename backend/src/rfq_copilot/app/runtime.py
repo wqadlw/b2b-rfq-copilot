@@ -61,17 +61,27 @@ def _build_embedder(settings: Any) -> HashingEmbedder | OpenAICompatEmbedder:
 
 
 def _build_rag(settings: Any, manifest: Manifest) -> RAGPipeline | None:
-    """Build the pipeline with an empty store; seeding happens at app startup (async)."""
+    """Build the pipeline with an empty store; seeding happens at app startup (async).
+
+    QA-0007/0010：按 Settings.rag_store 装配存储——"inmemory"（demo/CI）|
+    "pgvector"（prod，HNSW，DSN 缺失即 ConfigError 快速失败）。
+    """
     if not manifest.ports.knowledge_source.enabled:
         return None
     embedder = _build_embedder(settings)
-    return RAGPipeline(embedder=embedder, store=InMemoryVectorStore(), reranker=NoopReranker())
+    if settings.rag_store == "pgvector":
+        from rfq_copilot.app.infra_pgvector import PgVectorStore
+
+        store: Any = PgVectorStore(settings.rag_pgvector_dsn)
+    else:
+        store = InMemoryVectorStore()
+    return RAGPipeline(embedder=embedder, store=store, reranker=NoopReranker())
 
 
 async def seed_demo(runtime: Runtime) -> None:
     """Seed the in-memory store（demo 文档或站点离线知识集，skipped when already seeded）."""
     rag = runtime.deps.rag
-    if rag is None or rag._store.count() > 0:  # noqa: SLF001 — runtime owns its pipeline
+    if rag is None or await rag._store.count() > 0:  # noqa: SLF001 — runtime owns its pipeline
         return
     knowledge_dir = get_settings().knowledge_data_dir
     if knowledge_dir:

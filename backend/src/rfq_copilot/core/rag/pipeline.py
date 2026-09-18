@@ -25,14 +25,14 @@ class RAGPipeline:
 
     async def ingest(self, chunks: list[Chunk]) -> int:
         vectors = await self._embedder.embed([c.content for c in chunks])
-        count = self._store.add(chunks, vectors)
+        count = await self._store.add(chunks, vectors)
         logger.info("rag.ingest", chunks=count, dim=len(vectors[0]) if vectors else 0)
         return count
 
     async def search(self, query: str, top_k: int = FINAL_TOP_K) -> list[Chunk]:
         """Recall (top 20) → rerank → final top 5. Output schema carries trust_level."""
         query_vector = (await self._embedder.embed([query]))[0]
-        candidates = self._store.search(query_vector, top_k=RECALL_TOP_K)
+        candidates = await self._store.search(query_vector, top_k=RECALL_TOP_K)
         logger.info(
             "rag.retrieve",
             query_len=len(query),
@@ -44,9 +44,9 @@ class RAGPipeline:
         logger.info("rag.rerank", final=[c.doc_id for c in final])
         return final
 
-    def remove_doc(self, doc_id: str) -> int:
+    async def remove_doc(self, doc_id: str) -> int:
         """Remove all chunks for a doc_id (delegates to store)."""
-        return self._store.remove_by_doc_id(doc_id)
+        return await self._store.remove_by_doc_id(doc_id)
 
     async def context_for(self, query: str, top_k: int = FINAL_TOP_K) -> tuple[str, list[Chunk]]:
         """Search + render trust-isolated context blocks (platform/merchant separated)."""

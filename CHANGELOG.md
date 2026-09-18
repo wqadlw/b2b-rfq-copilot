@@ -7,6 +7,10 @@
 
 ### Changed (2026-09-18)
 
+- **QA-0007/0010 pgvector 真装配**：`VectorStore` 协议统一 async；新增 `PgVectorStore`
+  （HNSW 检索、协议级 add/search/remove/count）；`build_runtime` 按 `RAG_STORE`
+  装配（inmemory|pgvector，缺 DSN 快速失败）；pgvector 验收脚本同时验证协议回路。
+  生产检索不再是无索引的 Python 余弦扫描（ADR-0003 承诺自此兑现）。
 - **QA-0002 注入防护锚点对齐**：检索上下文渲染加 `<retrieved_context>` 外层信封
   （内嵌信任分块不变），system prompt 引用的锚点自此真实存在；新增
   "prompt 引用标签 ⊆ 渲染器产出集" 一致性合同测试（spec §01 6.3 同步）。
