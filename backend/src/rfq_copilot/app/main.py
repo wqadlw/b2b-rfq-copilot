@@ -45,7 +45,7 @@ from rfq_copilot.schemas.chat import (
     SessionCreateResponse,
     UiConfigResponse,
 )
-from rfq_copilot.schemas.events import sse_text
+from rfq_copilot.schemas.events import EventName, sse_text
 
 _RUNTIME: Runtime | None = None
 _LIMITER = SlidingWindowLimiter()
@@ -168,7 +168,9 @@ def create_app() -> FastAPI:
             rtg = get_runtime()
             faq = rtg.deps.faq_matcher.match(body.message) if rtg.deps.faq_matcher else None
 
-            async def _guest_stream(answer_text: str, events: list[tuple[str, dict[str, Any]]]) -> StreamingResponse:
+            async def _guest_stream(
+                answer_text: str, events: list[tuple[EventName, dict[str, Any]]]
+            ) -> StreamingResponse:
                 async def _gen() -> AsyncIterator[str]:
                     yield sse_text([("status", {"message": "正在查询"})])
                     yield sse_text([("answer_delta", {"delta": answer_text})])
@@ -194,7 +196,7 @@ def create_app() -> FastAPI:
                 rtg.store.append_message(body.session_id, "user", body.message)
                 solution = rtg.deps.solutions.by_industry(solution_industry)
                 if solution is not None:
-                    sol_events: list[tuple[str, dict[str, Any]]] = [
+                    sol_events: list[tuple[EventName, dict[str, Any]]] = [
                         (
                             "card",
                             {
@@ -223,7 +225,7 @@ def create_app() -> FastAPI:
                 rtg.store.append_message(body.session_id, "user", body.message)
                 case_hits = rtg.deps.cases.by_industry_slug(case_industry)[:3]
                 if case_hits:
-                    case_events: list[tuple[str, dict[str, Any]]] = []
+                    case_events: list[tuple[EventName, dict[str, Any]]] = []
                     for case in case_hits:
                         case_events.append(("citation", {"title": case.title, "url": case.url, "trust": "platform"}))
                         case_events.append(
@@ -260,7 +262,7 @@ def create_app() -> FastAPI:
                     rtg.store.append_message(body.session_id, "assistant", no_answer)
                     return await _guest_stream(no_answer, [])
                 status_lines = []
-                status_events: list[tuple[str, dict[str, Any]]] = []
+                status_events: list[tuple[EventName, dict[str, Any]]] = []
                 for item in status_items[:5]:
                     quote_note = f"收到 {item['quote_count']} 份报价" if item.get("quote_count") else "待供应商报价"
                     status_lines.append(
@@ -324,7 +326,7 @@ def create_app() -> FastAPI:
                 )
                 wechat = rtg.manifest.chat.wechat
                 suggestions = rtg.faq_registry.suggest(body.message, limit=3) if rtg.faq_registry else []
-                events: list[tuple[str, dict[str, Any]]] = [
+                events: list[tuple[EventName, dict[str, Any]]] = [
                     ("login_required", {"reason": "llm_turn", "suggestions": suggestions})
                 ]
                 if wechat.qrcode_url:

@@ -284,6 +284,13 @@ def _respond_node(deps: GraphDeps) -> Any:
         whitelist: set[str] = set()
         tools = deps.tool_registry()
 
+        if route == "faq_answer":
+            # QA-0011：FAQ 命中答案在 understand 节点已生成（0 token 直达），
+            # 此处必须直取直返；此前无此分支，落 else 被澄清模板覆盖。
+            answer = str(state.get("answer") or "")
+            answer, _ = filter_output(answer, frozenset())
+            return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+
         if route == "spec_match_flow" and deps.rag is not None:
             # 规格匹配：从实体中提取规格条件，按参数过滤产品
             tool_calls.append("spec_match")
