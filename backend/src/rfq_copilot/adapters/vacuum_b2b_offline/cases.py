@@ -1,7 +1,7 @@
-"""ZZK 客户案例目录（离线导出 zzk_cases.json，只读内存态）。
+"""站点客户案例目录（离线导出 cases.json，只读内存态）。
 
 数据源：站点 CaseStudy 表（status=STATUS_PUB=2，含脱敏客户/量化指标/白皮书）。
-导出：站点侧 artisan 查询 → KNOWLEDGE_DATA_DIR/zzk_cases.json。
+导出：站点侧 artisan 查询 → KNOWLEDGE_DATA_DIR/cases.json。
 """
 
 from __future__ import annotations
@@ -9,13 +9,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from rfq_copilot.adapters.zhaozhenkong_offline.zzk_solutions import _INDUSTRY_ALIASES
+from rfq_copilot.adapters.vacuum_b2b_offline.solutions import _INDUSTRY_ALIASES
 from rfq_copilot.ports.industry_knowledge import Case
 
-CASES_FILENAME = "zzk_cases.json"
+CASES_FILENAME = "cases.json"
 
 
-class ZzkCaseDirectory:
+class OfflineCaseDirectory:
     """案例检索；数据文件缺失/损坏时保持空目录（不抛错、不瘫痪）。"""
 
     def __init__(self, data_dir: str | None = None) -> None:

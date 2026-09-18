@@ -1,12 +1,12 @@
-r"""从找真空站点导出检索元数据（同义词 + 屏蔽词）→ KNOWLEDGE_DATA_DIR。
+r"""从站点导出检索元数据（同义词 + 屏蔽词）→ KNOWLEDGE_DATA_DIR。
 
 数据只在站点数据库里（无 seeder），因此走站点自己的 artisan/tinker 连接（只读 SELECT）。
 站点 DB 未启动时脚本会明确报错退出——绝不用空数据覆盖已有文件。
 
 用法：
     uv run python scripts/export_search_meta.py \
-        --site-dir D:\AAAAA\zhaozhenkong \
-        --output-dir .ai/private/zzk_rag_data
+        --site-dir <站点仓库路径> \
+        --output-dir .ai/private/rag_data
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-BEGIN = "ZZKMETA_BEGIN"
-END = "ZZKMETA_END"
+BEGIN = "SITEMETA_BEGIN"
+END = "SITEMETA_END"
 
 PHP_SNIPPET = (
     f"echo '{BEGIN}'; "
@@ -48,7 +48,7 @@ def extract_payload(stdout: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="导出站点同义词/屏蔽词（只读）")
-    parser.add_argument("--site-dir", required=True, help="找真空仓库路径")
+    parser.add_argument("--site-dir", required=True, help="站点仓库路径")
     parser.add_argument("--output-dir", required=True, help="KNOWLEDGE_DATA_DIR")
     parser.add_argument("--php", default="php", help="php 可执行文件")
     args = parser.parse_args()
@@ -73,7 +73,7 @@ def main() -> int:
     payload["exported_at"] = datetime.now(UTC).isoformat(timespec="seconds")
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "zzk_search_meta.json"
+    out_path = out_dir / "search_meta.json"
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"written {out_path} synonyms={len(payload['synonyms'])} block_words={len(payload['block_words'])}")
     return 0

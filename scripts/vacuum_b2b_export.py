@@ -1,4 +1,4 @@
-"""找真空 seeder 数据 → RAG 知识库导出管道（阶段 A，架构师批复 2026-09-15 版）。
+"""站点 seeder 数据 → RAG 知识库导出管道（阶段 A，架构师批复 2026-09-15 版）。
 
 四个 ETL 组件（架构师指令逐项落地）：
 - FakeDataFilter：状态机过滤（status=1 且未软删）+ 价格黑名单（仅对定价产品生效）+
@@ -11,8 +11,8 @@
 
 安全边界：
 - 真实数据绝不写入 backend/knowledge/**；--output-dir 必须位于 .ai/private/** 或
-  zzk_rag_data/** 或仓库之外，否则拒绝（--force 可越过但会打印醒目警告）
-- 本脚本只读找真空 seeder 文件；对找真空仓库零修改
+  rag_data/** 或仓库之外，否则拒绝（--force 可越过但会打印醒目警告）
+- 本脚本只读站点 seeder 文件；对站点仓库零修改
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
-from rfq_copilot.adapters.zhaozhenkong_offline.php_array import PhpParseError
-from rfq_copilot.adapters.zhaozhenkong_offline.sources import (
+from rfq_copilot.adapters.vacuum_b2b_offline.php_array import PhpParseError
+from rfq_copilot.adapters.vacuum_b2b_offline.sources import (
     load_articles,
     load_cases,
     load_insights,
@@ -45,7 +45,7 @@ UGCPREFIX = "[用户提交内容 - 未经平台核实]"
 CHUNK_LIMIT = 500
 ANOMALY_PRICES = {99999.0, 999999.0, 9999999.0}
 TEST_NAMES = {"test", "测试", "test1", "测试产品"}
-FAKE_PHONES = {"13800138000"}
+FAKE_PHONES = {"13800000000"}
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +268,7 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
         )
         documents.extend(
             _chunk_doc(
-                doc_id=f"zzk-product-{item.get('slug', item.get('name', 'unknown'))}",
+                doc_id=f"offline-product-{item.get('slug', item.get('name', 'unknown'))}",
                 title=str(item.get("name", "")),
                 doc_type="product",
                 trust_level="merchant",
@@ -318,7 +318,7 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
                 )
                 documents.extend(
                     _chunk_doc(
-                        doc_id=f"zzk-variety-{industry.get('slug', 'x')}-{variety.get('slug', 'x')}-base",
+                        doc_id=f"offline-variety-{industry.get('slug', 'x')}-{variety.get('slug', 'x')}-base",
                         title=variety_name,
                         doc_type="selection_guide",
                         trust_level="platform",
@@ -332,7 +332,7 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
                     if content_lines:
                         documents.extend(
                             _chunk_doc(
-                                doc_id=f"zzk-variety-{industry.get('slug', 'x')}-{variety.get('slug', 'x')}-deep",
+                                doc_id=f"offline-variety-{industry.get('slug', 'x')}-{variety.get('slug', 'x')}-deep",
                                 title=f"{variety_name}（深度内容）",
                                 doc_type="selection_guide",
                                 trust_level="platform",
@@ -359,7 +359,7 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
             qa_body = qa_pair_from_pain(tag, f"参见「{target}」工艺方案页", industry_name)
             documents.extend(
                 _chunk_doc(
-                    doc_id=f"zzk-qa-{industry_slug}-{target or qa_count}",
+                    doc_id=f"offline-qa-{industry_slug}-{target or qa_count}",
                     title=f"{industry_name}｜{tag[:30]}",
                     doc_type="platform_faq",
                     trust_level="platform",
@@ -412,7 +412,7 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
         slug = str(item.get("slug", sol_docs))
         documents.extend(
             _chunk_doc(
-                doc_id=f"zzk-solutions-{slug}",
+                doc_id=f"offline-solutions-{slug}",
                 title=name,
                 doc_type="selection_guide",
                 trust_level="platform",
@@ -441,7 +441,7 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
             if source_name == "questions" and answer:
                 documents.extend(
                     _chunk_doc(
-                        doc_id=f"zzk-questions-{item.get('slug', len(documents))}",
+                        doc_id=f"offline-questions-{item.get('slug', len(documents))}",
                         title=title,
                         doc_type="platform_faq",
                         trust_level="platform",
@@ -462,7 +462,7 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
                 art_type = str(item.get("type", "article"))
                 documents.extend(
                     _chunk_doc(
-                        doc_id=f"zzk-articles-{item.get('slug', len(documents))}",
+                        doc_id=f"offline-articles-{item.get('slug', len(documents))}",
                         title=title,
                         doc_type="platform_faq",
                         trust_level="platform",
@@ -496,7 +496,7 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
             trust = "merchant" if supplier_raw not in (None, "", "0") else "platform"
             documents.extend(
                 _chunk_doc(
-                    doc_id=f"zzk-{source_name}-{item.get('slug', kept_docs)}",
+                    doc_id=f"offline-{source_name}-{item.get('slug', kept_docs)}",
                     title=title,
                     doc_type=doc_type,
                     trust_level=trust,
@@ -532,19 +532,19 @@ def _safe_output_dir(raw: str, repo_root: Path) -> Path:
     if knowledge_root in out.parents or out == knowledge_root:
         raise SystemExit("拒绝：真实数据禁止写入 backend/knowledge/（公开仓库边界，repo-policy）")
     inside_repo = repo_root in out.parents
-    allowed_private = ".ai/private" in str(out) or "zzk_rag_data" in str(out)
+    allowed_private = ".ai/private" in str(out) or "rag_data" in str(out)
     if inside_repo and not allowed_private:
         raise SystemExit(
-            f"拒绝：输出目录 {out} 在仓库内且非 .ai/private/zzk_rag_data 路径。"
-            "真实数据只允许 .ai/private/**、zzk_rag_data/** 或仓库外目录（--force 可越过）。"
+            f"拒绝：输出目录 {out} 在仓库内且非 .ai/private/rag_data 路径。"
+            "真实数据只允许 .ai/private/**、rag_data/** 或仓库外目录（--force 可越过）。"
         )
     return out
 
 
 def main(argv: list[str] | None = None) -> int:
     repo_root = Path(__file__).resolve().parents[1]
-    parser = argparse.ArgumentParser(description="找真空 seeder → RAG 知识库导出（阶段 A）")
-    parser.add_argument("--source-dir", required=True, help="找真空 database/seeders 目录")
+    parser = argparse.ArgumentParser(description="站点 seeder → RAG 知识库导出（阶段 A）")
+    parser.add_argument("--source-dir", required=True, help="站点 database/seeders 目录")
     parser.add_argument("--dry-run", action="store_true", help="只出统计报告，不落盘（默认）")
     parser.add_argument("--json", dest="json_path", help="导出中间 JSON 供审查")
     parser.add_argument("--output-dir", help="知识 JSON 落盘目录（受安全规则约束）")
@@ -557,7 +557,7 @@ def main(argv: list[str] | None = None) -> int:
 
     output = build_documents(source_dir)
 
-    print("=== 找真空知识导出 · 统计报告 ===")
+    print("=== 站点知识导出 · 统计报告 ===")
     print(f"documents: {output.stats['documents']}")
     print(f"by_trust_level: {json.dumps(output.stats['by_trust_level'], ensure_ascii=False)}")
     print(f"by_doc_type: {json.dumps(output.stats['by_doc_type'], ensure_ascii=False)}")
@@ -593,7 +593,7 @@ def main(argv: list[str] | None = None) -> int:
         out_dir = _safe_output_dir(args.output_dir, repo_root)
         out_dir.mkdir(parents=True, exist_ok=True)
         payload = {"stats": output.stats, "documents": [doc.model_dump() for doc in output.documents]}
-        (out_dir / "zzk_knowledge.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        (out_dir / "knowledge.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
         log_path = out_dir / "etl_filtered.log"
         with log_path.open("w", encoding="utf-8") as handle:
             for item in output.filtered_log:

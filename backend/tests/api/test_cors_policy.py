@@ -30,7 +30,7 @@ def api_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     [
         ("https://evil.example.com", False),  # 任意互联网源：拒绝（修复前放行）
         ("http://evil.example.com", False),
-        ("https://zhaozhenkong.com", False),  # 未配置白名单时生产域也拒绝（默认拒绝）
+        ("https://your-domain.com", False),  # 未配置白名单时生产域也拒绝（默认拒绝）
         ("http://localhost:5173", True),  # 本机开发源恒放行
         ("http://127.0.0.1:8001", True),
     ],
@@ -51,12 +51,12 @@ def test_cors_allowlist_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     get_settings.cache_clear()
     monkeypatch.setenv("INTERNAL_API_TOKEN", "test-cors")
-    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://zhaozhenkong.com,https://www.zhaozhenkong.com")
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://your-domain.com,https://www.your-domain.com")
     main_module._RUNTIME = build_runtime()
     fresh_app = main_module.create_app()
     with TestClient(fresh_app) as client:
-        ok = client.get("/api/v1/ui-config", headers={"Origin": "https://www.zhaozhenkong.com"})
+        ok = client.get("/api/v1/ui-config", headers={"Origin": "https://www.your-domain.com"})
         bad = client.get("/api/v1/ui-config", headers={"Origin": "https://evil.example.com"})
-    assert ok.headers.get("access-control-allow-origin") == "https://www.zhaozhenkong.com"
+    assert ok.headers.get("access-control-allow-origin") == "https://www.your-domain.com"
     assert bad.headers.get("access-control-allow-origin") is None
     get_settings.cache_clear()

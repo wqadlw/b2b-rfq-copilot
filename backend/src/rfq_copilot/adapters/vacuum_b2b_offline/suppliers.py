@@ -1,6 +1,7 @@
-"""ZZK 供应商目录 v3：处理两种块形态（多行字段块 + 单行压缩块）。"""
+"""站点供应商目录 v3：处理两种块形态（多行字段块 + 单行压缩块）。"""
 
 import json
+import os
 import re
 from typing import TYPE_CHECKING
 
@@ -15,7 +16,9 @@ from rfq_copilot.ports.supplier_directory import (
     SupplierSummary,
 )
 
-SEEDER_PATH = Path(r"D:\AAAAA\zhaozhenkong\database\seeders\SupplierSeeder.php")
+# 站点 SupplierSeeder 路径（开发机私有仓库）；缺省指向相对占位路径，
+# 文件缺失时回退 knowledge.json 导出数据——生产环境经 SUPPLIER_SEEDER_PATH 注入。
+SEEDER_PATH = Path(os.environ.get("SUPPLIER_SEEDER_PATH", "data/SupplierSeeder.php"))
 
 
 def _certs(block: str) -> list[str]:
@@ -34,11 +37,11 @@ def _field(block: str, key: str) -> str | None:
     return m.group(1) if m else None
 
 
-class ZzkSupplierDirectory(SupplierDirectoryPort):
-    """真实找真空供应商目录（SupplierSeeder：1 多行块 + 4 单行压缩块 = 5 家）。"""
+class OfflineSupplierDirectory(SupplierDirectoryPort):
+    """站点供应商目录离线副本（SupplierSeeder：1 多行块 + 4 单行压缩块 = 5 家）。"""
 
     def __init__(self, knowledge_data_dir: str | None = None) -> None:
-        """与 ZzkProductCatalog 保持一致的签名：接收 knowledge_data_dir（回退数据源）。"""
+        """与 OfflineProductCatalog 保持一致的签名：接收 knowledge_data_dir（回退数据源）。"""
         self._intros_by_id: dict[str, str] = {}
         self._suppliers: list[SupplierSummary] = []
         self._parse(SEEDER_PATH)
@@ -46,7 +49,7 @@ class ZzkSupplierDirectory(SupplierDirectoryPort):
             self._load_from_knowledge_json(Path(knowledge_data_dir))
 
     def _load_from_knowledge_json(self, data_dir: Path) -> None:
-        payload_path = data_dir / "zzk_knowledge.json"
+        payload_path = data_dir / "knowledge.json"
         if not payload_path.is_file():
             return
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
@@ -57,7 +60,7 @@ class ZzkSupplierDirectory(SupplierDirectoryPort):
         for i, name in enumerate(names, start=1):
             self._suppliers.append(
                 SupplierSummary(
-                    id=f"zzk-supplier-fallback-{i:03d}",
+                    id=f"offline-supplier-fallback-{i:03d}",
                     name=name,
                     region=None,
                     main_products=["真空设备"],
@@ -81,10 +84,10 @@ class ZzkSupplierDirectory(SupplierDirectoryPort):
             name = _field(body, "company_name")
             if not (slug and name):
                 continue
-            self._intros_by_id[f"zzk-supplier-{slug}"] = _field(body, "intro") or ""
+            self._intros_by_id[f"offline-supplier-{slug}"] = _field(body, "intro") or ""
             self._suppliers.append(
                 SupplierSummary(
-                    id=f"zzk-supplier-{slug}",
+                    id=f"offline-supplier-{slug}",
                     name=name,
                     region=_field(body, "region"),
                     main_products=[c.strip() for c in (_field(body, "main_categories") or "真空设备").split("，")[0:3]],
@@ -104,7 +107,7 @@ class ZzkSupplierDirectory(SupplierDirectoryPort):
             cats = _field(line, "main_categories") or "真空设备"
             self._suppliers.append(
                 SupplierSummary(
-                    id=f"zzk-supplier-{slug}",
+                    id=f"offline-supplier-{slug}",
                     name=name,
                     region=_field(line, "region"),
                     main_products=[c.strip() for c in cats.split("、")[:3]] or ["真空设备"],

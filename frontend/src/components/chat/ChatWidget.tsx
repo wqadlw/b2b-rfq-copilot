@@ -117,7 +117,7 @@ export function ChatWidget({
           adapter: "fallback",
           display_name: "AI 采购助手",
           chat: {
-            welcome_message: "您好，我是找真空 AI 采购助手。可以帮您找产品、查方案、发起询盘。",
+            welcome_message: "您好，我是 AI 采购助手。可以帮您找产品、查方案、发起询盘。",
             suggested_questions: ["真空泵有哪些？", "食品加工有什么解决方案", "半导体行业有没有案例"],
           },
           theme: { primary: null },

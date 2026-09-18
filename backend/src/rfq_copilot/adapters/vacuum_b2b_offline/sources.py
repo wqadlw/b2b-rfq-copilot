@@ -1,4 +1,4 @@
-"""Loaders that turn 找真空 seeder files into plain Python structures.
+"""Loaders that turn site seeder files into plain Python structures.
 
 Anti-corruption layer rules:
 - stdlib only; imports nothing from rfq_copilot (import-linter: adapters must not import core/app).
@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from rfq_copilot.adapters.zhaozhenkong_offline.php_array import (
+from rfq_copilot.adapters.vacuum_b2b_offline.php_array import (
     PhpParseError,
     extract_literal_span,
     parse_php_value,
@@ -70,7 +70,7 @@ def _iter_php_array_literals(text: str) -> list[str]:
             continue
         opener = "[" if text[start] == "[" else "("
         try:
-            from rfq_copilot.adapters.zhaozhenkong_offline.php_array import _match_bracket
+            from rfq_copilot.adapters.vacuum_b2b_offline.php_array import _match_bracket
 
             end = (
                 _match_bracket(text, start)
