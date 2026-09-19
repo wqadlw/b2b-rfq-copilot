@@ -285,7 +285,12 @@ class PgVectorStore:
 
         conn = await asyncpg.connect(self._dsn)
         try:
-            status = await conn.execute("DELETE FROM knowledge_chunks WHERE doc_id = $1", doc_id)
+            # 家族语义：精确 doc_id + wrap_chunks 的 ` (i/n)` 分块后缀；
+            # 用 LEFT 比较而非 LIKE，避免 doc_id 中的 %/_ 通配符注入
+            status = await conn.execute(
+                "DELETE FROM knowledge_chunks WHERE doc_id = $1 OR LEFT(doc_id, LENGTH($1) + 2) = $1 || ' ('",
+                doc_id,
+            )
             # asyncpg 返回 "DELETE n" 状态串
             return int(status.split()[-1]) if status else 0
         finally:

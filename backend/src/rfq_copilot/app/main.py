@@ -543,9 +543,11 @@ def create_app() -> FastAPI:
             product_id=body.get("product_id") or None,
             params=params or None,
         )
+        # 替换语义：先移除旧文档家族（含 (i/n) 分块后缀），再灌新块——更新后旧块不残留
+        removed = await rt.deps.rag.remove_doc(doc_id)
         chunks = chunk_document(doc)
         await rt.deps.rag.ingest(chunks)
-        return {"doc_id": doc_id, "chunks": len(chunks), "status": "ingested"}
+        return {"doc_id": doc_id, "chunks": len(chunks), "replaced_chunks": removed, "status": "ingested"}
 
     @app.delete("/api/v1/knowledge/{doc_id}")
     async def delete_knowledge(doc_id: str, request: Request) -> dict[str, Any]:

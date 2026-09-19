@@ -125,3 +125,41 @@ def test_post_rejects_non_string_params(client: TestClient) -> None:
     )
     assert r.status_code == 400
     assert r.json()["detail"]["code"] == "INVALID_PARAMS"
+
+
+def test_post_replaces_multi_chunk_family(client: TestClient) -> None:
+    """替换语义：长文档（2 块）→ 短文档（1 块）后，旧 (2/2) 块不残留。"""
+    headers = {"X-Internal-Token": TOKEN}
+    long_body = "很长的产品详情。" * 300
+    r1 = client.post(
+        "/api/v1/knowledge",
+        json={"doc_id": "family-doc", "title": "t", "content": long_body, "doc_type": "product"},
+        headers=headers,
+    )
+    assert r1.status_code == 200 and r1.json()["chunks"] >= 2
+
+    r2 = client.post(
+        "/api/v1/knowledge",
+        json={"doc_id": "family-doc", "title": "t", "content": "短内容一整句。", "doc_type": "product"},
+        headers=headers,
+    )
+    assert r2.status_code == 200
+    assert r2.json()["replaced_chunks"] == r1.json()["chunks"]
+    assert r2.json()["chunks"] == 1
+
+    r3 = client.delete("/api/v1/knowledge/family-doc", headers=headers)
+    assert r3.json()["chunks_removed"] == 1
+
+
+def test_delete_removes_whole_family(client: TestClient) -> None:
+    """家族删除：DELETE 基础 doc_id 时，(i/n) 分块后缀的兄弟块一并移除。"""
+    headers = {"X-Internal-Token": TOKEN}
+    r = client.post(
+        "/api/v1/knowledge",
+        json={"doc_id": "family-doc-2", "title": "t", "content": "很长的产品详情。" * 300, "doc_type": "product"},
+        headers=headers,
+    )
+    total = r.json()["chunks"]
+    assert total >= 2
+    r = client.delete("/api/v1/knowledge/family-doc-2", headers=headers)
+    assert r.status_code == 200 and r.json()["chunks_removed"] == total

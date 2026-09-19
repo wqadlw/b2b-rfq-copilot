@@ -104,7 +104,7 @@
 
 | 端点 | 说明 |
 |---|---|
-| `POST /api/v1/knowledge` | 运行时插入/替换文档（按 doc_id 整文档重嵌，无需重启）。必填 `doc_id`/`title`/`content`；可选 `doc_type`（默认 platform_faq）、`trust_level`（默认 platform）、`supplier_id`、`product_id`、`params`（`dict[str,str]`，选型过滤元数据，08 规格 §6.4.1 消费）。成功 → `{"doc_id","chunks","status":"ingested"}`。坏 JSON/非对象 → 400 INVALID_JSON；缺必填 → 400 MISSING_FIELDS；知识库未启用 → 503 PORT_DISABLED |
+| `POST /api/v1/knowledge` | 运行时插入/**替换**文档（先移除同 doc_id 文档家族——含 ` (i/n)` 分块后缀——再按新内容重嵌，无需重启）。必填 `doc_id`/`title`/`content`；可选 `doc_type`（默认 platform_faq）、`trust_level`（默认 platform）、`supplier_id`、`product_id`、`params`（`dict[str,str]`，选型过滤元数据，08 规格 §6.4.1 消费）。成功 → `{"doc_id","chunks","replaced_chunks","status":"ingested"}`。坏 JSON/非对象 → 400 INVALID_JSON；缺必填 → 400 MISSING_FIELDS；params 非法 → 400 INVALID_PARAMS；知识库未启用 → 503 PORT_DISABLED |
 | `DELETE /api/v1/knowledge/{doc_id}` | 移除该文档全部块；返回 `{"doc_id","removed","status":"removed"}` |
 
 **调用方契约（站点 webhook，阶段 3）**：doc_id 必须与导出脚本命名一致（产品=`offline-product-{slug}`），保证运行时更新与每日兜底重导可对账；站点侧失败仅告警不阻断内容保存（fail-open）。
