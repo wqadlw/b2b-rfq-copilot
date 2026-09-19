@@ -78,10 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         if src.is_file():
             shutil.copy2(src, live_dir / name)
     shutil.rmtree(refresh_dir)
-    print(
-        f"refreshed：added={added['count']} removed={removed['count']} "
-        f"changed={changed['count']} → {live_dir}"
-    )
+    print(f"refreshed：added={added['count']} removed={removed['count']} changed={changed['count']} → {live_dir}")
     for item in added["samples"][:5] + removed["samples"][:5] + changed["samples"][:5]:
         print(f"  - {item}")
     print("提示：引擎重启后加载新快照；运行期实时增量由 webhook 覆盖。")
