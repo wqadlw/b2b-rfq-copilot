@@ -469,7 +469,9 @@ def _respond_node(deps: GraphDeps) -> Any:
         elif route == "knowledge_flow" and deps.rag is not None:
             tool_calls.append("search_knowledge")
             events.append(("tool_call", {"tool": "search_knowledge", "status": "running"}))
-            context, chunks = await deps.rag.context_for(message)
+            # 01-port-spec §6.4.1：understanding.entities → SpecCriteria 规格过滤（回落保护在 pipeline 内）
+            spec = extract_spec_criteria((state.get("understanding") or {}).get("entities") or {})
+            context, chunks = await deps.rag.context_for(message, spec=None if spec.is_empty else spec)
             events.append(("retrieval", {"count": len(chunks), "trust": [c.trust_level for c in chunks]}))
             for i, c in enumerate(chunks, start=1):
                 events.append(("citation", {"index": i, "title": c.title, "trust": c.trust_level}))

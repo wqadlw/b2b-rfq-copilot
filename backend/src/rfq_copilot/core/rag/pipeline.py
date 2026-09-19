@@ -10,6 +10,7 @@ from rfq_copilot.core.rag.citation import render_context
 from rfq_copilot.core.rag.embedding import EmbeddingClient
 from rfq_copilot.core.rag.keyword import extract_keywords, rrf_fuse
 from rfq_copilot.core.rag.reranker import Reranker
+from rfq_copilot.core.rag.spec_matcher import SpecCriteria, chunk_matches_spec
 from rfq_copilot.core.rag.store import VectorStore
 
 logger = structlog.get_logger(__name__)
@@ -37,8 +38,8 @@ class RAGPipeline:
         logger.info("rag.ingest", chunks=count, dim=len(vectors[0]) if vectors else 0)
         return count
 
-    async def search(self, query: str, top_k: int = FINAL_TOP_K) -> list[Chunk]:
-        """Recall (top 20 ×2 通道) → RRF 融合 → rerank → final top 5. Output schema carries trust_level."""
+    async def search(self, query: str, top_k: int = FINAL_TOP_K, spec: SpecCriteria | None = None) -> list[Chunk]:
+        """Recall (top 20 ×2 通道) → RRF 融合 → spec 过滤（带回落）→ rerank → final top 5."""
         query_vector = (await self._embedder.embed([query]))[0]
         candidates = await self._store.search(query_vector, top_k=RECALL_TOP_K)
         if self._hybrid:
@@ -46,11 +47,17 @@ class RAGPipeline:
             fused = rrf_fuse([s.chunk for s in candidates], [s.chunk for s in keyword_hits], top_k=RECALL_TOP_K)
         else:
             fused = [s.chunk for s in candidates]
+        if spec is not None and not spec.is_empty:
+            filtered = [c for c in fused if chunk_matches_spec(c, spec)]
+            # §6.4.1 回落保护：过滤后候选不足则整体回落未过滤结果——宁可放宽不可答空
+            if len(filtered) >= min(top_k, len(fused)) and filtered:
+                fused = filtered
         logger.info(
             "rag.retrieve",
             query_len=len(query),
             recall=len(candidates),
             hybrid=self._hybrid,
+            spec=bool(spec is not None and not spec.is_empty),
             trust=[c.trust_level for c in fused[:5]],
         )
         ranked = self._reranker.rerank(query, fused)
@@ -62,7 +69,9 @@ class RAGPipeline:
         """Remove all chunks for a doc_id (delegates to store)."""
         return await self._store.remove_by_doc_id(doc_id)
 
-    async def context_for(self, query: str, top_k: int = FINAL_TOP_K) -> tuple[str, list[Chunk]]:
+    async def context_for(
+        self, query: str, top_k: int = FINAL_TOP_K, spec: SpecCriteria | None = None
+    ) -> tuple[str, list[Chunk]]:
         """Search + render trust-isolated context blocks (platform/merchant separated)."""
-        chunks = await self.search(query, top_k)
+        chunks = await self.search(query, top_k, spec=spec)
         return render_context(chunks), chunks

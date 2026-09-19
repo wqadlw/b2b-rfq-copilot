@@ -287,6 +287,23 @@ Policy(c) = RefusalPolicy(
 4. **验收**：检索评测（06-eval-spec §7）真实语料 recall@5 不得低于向量单路基线（0.8550@HashingEmbedder）；
    型号精确查询（如 `RV12-76095b`）在混合模式下必须命中包含该型号的文档。
 
+#### 6.4.1 规格过滤（spec-aware retrieval，2026-09-19 新增）
+
+产品知识块携带结构化参数后，检索入口支持规格条件过滤（复用 `spec_matcher.SpecCriteria`
+与 `extract_spec_criteria`——与 spec_flow 产品匹配同一套条件语义）：
+
+1. **数据面**：`KnowledgeDocument`/`Chunk` 增加可选 `params: dict[str, str]`；导出脚本把产品
+   seeder 的 params 原样落入（值非字符串跳过）；pgvector 走 metadata jsonb 往返。
+2. **过滤语义**（`spec_matcher.chunk_matches_spec`）：
+   - `pumping_speed_min`：块 params 中参数键别名查找（**精确名优先，含子串次之**——真实
+     seeder 键名如"抽气速率(50Hz)/抽气速率范围"）取数值 ≥ min 才保留；
+   - `ultimate_vacuum_max`：`极限真空` 类键数值 ≤ max 才保留；
+   - `oil_free=true`：params `无油=是`，或任一参数值含"无油"，或 content/title 含 "无油"。
+3. **回落保护（强制）**：过滤只作用于融合后的召回池；若过滤后候选数 < top_k，**整体回落
+   未过滤结果**——缺参数的知识块（非产品块）绝不因过滤被团灭，宁可放宽不可答空。
+4. **调用方**：respond 节点 knowledge_flow 从 understanding.entities 派生 SpecCriteria
+   （is_empty 则不过滤），随 `context_for(message, spec=…)` 下传。
+
 ### 6.5 输出侧过滤
 
 输出流经内容过滤器，命中即拦截并替换为安全模板：疑似执行了资料内指令的表达（"本店/推荐我店/立即为您下单/不要告诉用户/忽略之前的规则"）；未带 `price_display` 白名单来源的价格承诺；未带 catalog 来源的货期/库存承诺。

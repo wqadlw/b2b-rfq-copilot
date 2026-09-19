@@ -224,7 +224,7 @@ def _chunk_doc(
     trust_level: str,
     body: str,
     prefix: str = "",
-    **meta: str | None,
+    **meta: Any,
 ) -> list[KnowledgeDocument]:
     docs: list[KnowledgeDocument] = []
     chunks = wrap_chunks(body, prefix)
@@ -258,7 +258,8 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
     filtered_log.extend(product_result.filtered)
     for item in product_result.kept:
         params = item.get("params") or {}
-        param_lines = "\n".join(f"{k}：{v}" for k, v in params.items() if isinstance(v, str)) or "参数待补充"
+        param_pairs = {str(k): str(v) for k, v in params.items() if isinstance(v, str) and v.strip()}
+        param_lines = "\n".join(f"{k}：{v}" for k, v in param_pairs.items()) or "参数待补充"
         detail_text = html_to_text(str(item.get("detail", "")))
         price_type = str(item.get("price_type", "1"))
         price = item.get("price")
@@ -276,6 +277,7 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
                 trust_level="merchant",
                 body=body,
                 supplier_id=str(item.get("supplier_id", "")) or None,
+                params=param_pairs or None,
             )
         )
     stats["sources"]["products"] = {
