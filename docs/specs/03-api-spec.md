@@ -100,6 +100,15 @@
 
 离线知识模式（`KNOWLEDGE_DATA_DIR` 非空）额外携带语料新鲜度（08-knowledge-export-spec §4/§5）：`"corpus_age_days": <float|null>, "corpus_stale": <bool>`；demo 模式不携带。
 
+### 知识运行时维护（08-knowledge-export-spec §6，全部需 X-Internal-Token）
+
+| 端点 | 说明 |
+|---|---|
+| `POST /api/v1/knowledge` | 运行时插入/**替换**文档（先移除同 doc_id 文档家族——含 ` (i/n)` 分块后缀——再按新内容重嵌，无需重启）。必填 `doc_id`/`title`/`content`；可选 `doc_type`（默认 platform_faq）、`trust_level`（默认 platform）、`supplier_id`、`product_id`、`params`（`dict[str,str]`，选型过滤元数据，08 规格 §6.4.1 消费）。成功 → `{"doc_id","chunks","replaced_chunks","status":"ingested"}`。坏 JSON/非对象 → 400 INVALID_JSON；缺必填 → 400 MISSING_FIELDS；params 非法 → 400 INVALID_PARAMS；知识库未启用 → 503 PORT_DISABLED |
+| `DELETE /api/v1/knowledge/{doc_id}` | 移除该文档全部块；返回 `{"doc_id","removed","status":"removed"}` |
+
+**调用方契约（站点 webhook，阶段 3）**：doc_id 必须与导出脚本命名一致（产品=`offline-product-{slug}`），保证运行时更新与每日兜底重导可对账；站点侧失败仅告警不阻断内容保存（fail-open）。
+
 ## 4.5 坐席接管（CS-1，全部需 X-Internal-Token）
 
 会话状态机：`bot_serving`（AI 服务中）→ `handoff_pending`（待人工接管，handoff 路由触发）→ `human_serving`（人工服务中）→ `closed`（已结束）。状态存于 SessionStore，随会话生命周期存在。

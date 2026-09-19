@@ -31,7 +31,9 @@ class VectorStore(Protocol):
         """关键词通道（01-port-spec §6.4）：tokens 由 extract_keywords 产出（唯一事实源）。"""
         ...
 
-    async def remove_by_doc_id(self, doc_id: str) -> int: ...
+    async def remove_by_doc_id(self, doc_id: str) -> int:
+        """移除文档家族：doc_id 精确匹配 + 其分块后缀 ` (i/n)`（03-api-spec 知识维护段）。"""
+        ...
 
     async def count(self) -> int: ...
 
@@ -94,9 +96,10 @@ class InMemoryVectorStore:
         return scored[:top_k]
 
     async def remove_by_doc_id(self, doc_id: str) -> int:
-        """Remove all chunks belonging to a document; returns count removed."""
+        """移除文档家族：精确 doc_id + ` (i/n)` 分块后缀（wrap_chunks 命名约定）。"""
         before = len(self.rows)
-        self.rows = [(c, v) for c, v in self.rows if c.doc_id != doc_id]
+        family = doc_id + " ("
+        self.rows = [(c, v) for c, v in self.rows if c.doc_id != doc_id and not c.doc_id.startswith(family)]
         self._invalidate()
         return before - len(self.rows)
 
