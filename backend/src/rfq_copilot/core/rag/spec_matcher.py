@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from rfq_copilot.core.rag.chunking import Chunk
 from rfq_copilot.ports.product_catalog import ProductDetail, ProductSummary
 
 # 已知参数的比较方向和标签
@@ -145,3 +146,46 @@ def _extract_number(text: str | None) -> float | None:
 
     match = re.search(r"[\d.]+", str(text))
     return float(match.group()) if match else None
+
+
+# ---------------------------------------------------------------------------
+# 知识块规格过滤（01-port-spec §6.4.1）
+# ---------------------------------------------------------------------------
+
+
+def chunk_matches_spec(chunk: Chunk, criteria: SpecCriteria) -> bool:
+    """按 SpecCriteria 判定知识块是否满足规格；params 缺失的项视为不可判定并跳过。
+
+    与 _score_product 的硬条件语义一致：数值可提取但不满足 → 排除；
+    数值不可提取（缺参数）→ 不因该项排除（回落保护由调用方负责）。
+    参数键按别名匹配（真实 seeder 键名如"抽气速率(50Hz)"）：精确名优先，含子串次之。
+    """
+    mapping = chunk.params if isinstance(chunk.params, dict) else {}
+
+    if criteria.pumping_speed_min is not None:
+        speed = _extract_number(_find_param(mapping, "抽速", "抽气速率", "pumping_speed"))
+        if speed is not None and speed < criteria.pumping_speed_min:
+            return False
+    if criteria.ultimate_vacuum_max is not None:
+        vacuum = _extract_number(_find_param(mapping, "极限真空", "ultimate_vacuum"))
+        if vacuum is not None and vacuum > criteria.ultimate_vacuum_max:
+            return False
+    if criteria.oil_free:
+        if mapping.get("无油") == "是":
+            return True
+        if any("无油" in value for value in mapping.values()):
+            return True
+        return "无油" in chunk.content or "无油" in chunk.title
+    return True
+
+
+def _find_param(mapping: dict[str, str], *aliases: str) -> str | None:
+    """参数键别名查找：精确名优先，含子串次之（键序保持插入序，确定性）。"""
+    for alias in aliases:
+        if alias in mapping:
+            return mapping[alias]
+    for alias in aliases:
+        for key, value in mapping.items():
+            if alias in key:
+                return value
+    return None

@@ -42,6 +42,7 @@ def _chunk_from_row(row: Any) -> Chunk:
         trust_level=trust,
         supplier_id=metadata.get("supplier_id"),
         product_id=metadata.get("product_id"),
+        params=metadata.get("params") if isinstance(metadata.get("params"), dict) else None,
     )
 
 
@@ -191,6 +192,7 @@ class PgVectorStore:
                     "supplier_id": chunk.supplier_id,
                     "product_id": chunk.product_id,
                     "title": chunk.title,
+                    "params": chunk.params,
                 }
                 await conn.execute(
                     """INSERT INTO knowledge_chunks

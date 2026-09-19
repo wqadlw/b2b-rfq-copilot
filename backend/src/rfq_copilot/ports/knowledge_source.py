@@ -21,6 +21,8 @@ class KnowledgeDocument(BaseModel):
     supplier_id: str | None = None
     product_id: str | None = None
     category_id: str | None = None
+    # 01-port-spec §6.4.1：结构化产品参数（键值对，值须为字符串；非产品块为 None）
+    params: dict[str, str] | None = None
     version: str = "1"
     language: str = "zh-CN"
 
