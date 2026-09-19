@@ -80,7 +80,7 @@ def _build_rag(settings: Any, manifest: Manifest) -> RAGPipeline | None:
         store: Any = PgVectorStore(settings.rag_pgvector_dsn)
     else:
         store = InMemoryVectorStore()
-    return RAGPipeline(embedder=embedder, store=store, reranker=NoopReranker())
+    return RAGPipeline(embedder=embedder, store=store, reranker=NoopReranker(), hybrid=settings.rag_hybrid)
 
 
 async def seed_demo(runtime: Runtime) -> None:

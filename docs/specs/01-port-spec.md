@@ -271,11 +271,27 @@ Policy(c) = RefusalPolicy(
 常量单一事实源：`core/rag/citation.py` 的 `RETRIEVED_CONTEXT_TAG` 与
 `context_anchor_tags()`；一致性测试保证 prompt 引用的 `<*_context>` 标签 ⊆ 渲染器产出集。
 
-### 6.4 输出侧过滤
+### 6.4 混合检索（向量 + 关键词 RRF 融合，2026-09-19 新增）
+
+纯向量检索对精确匹配型查询（型号/货号/参数词）弱——真空设备选型查询天然高频出现此类词。
+检索通道升级为双路融合：
+
+1. **关键词通道**：`VectorStore.keyword_search(tokens, top_k, trust_levels)` 新增协议方法。
+   - 分词器（`core/rag/keyword.py::extract_keywords`，两实现共用唯一事实源）：ASCII 连续段
+     （len≥2，型号/货号精确匹配）+ CJK 二元组（bigram）；去重保序；至多 12 个 token。
+   - InMemory 实现：惰性倒排索引（add/remove 时失效重建），得分 = 命中 token 数。
+   - PgVector 实现：`content ILIKE ANY($1::text[])`（token 预转义 `%`/`_`），本仓规模（≤数万 chunk）顺序扫描可接受。
+2. **融合**：RRF（reciprocal rank fusion，k=60）——`score = Σ 1/(60+rank)`，按 doc_id 去重取首现。
+   两路各召回 `RECALL_TOP_K=20`，融合后仍交 reranker（Noop 兜底）出 final top-5。
+3. **开关**：`RAG_HYBRID`（Settings.rag_hybrid，默认 true）。关闭时行为与 §6.3 时代完全一致。
+4. **验收**：检索评测（06-eval-spec §7）真实语料 recall@5 不得低于向量单路基线（0.8550@HashingEmbedder）；
+   型号精确查询（如 `RV12-76095b`）在混合模式下必须命中包含该型号的文档。
+
+### 6.5 输出侧过滤
 
 输出流经内容过滤器，命中即拦截并替换为安全模板：疑似执行了资料内指令的表达（"本店/推荐我店/立即为您下单/不要告诉用户/忽略之前的规则"）；未带 `price_display` 白名单来源的价格承诺；未带 catalog 来源的货期/库存承诺。
 
-### 6.5 写操作确认门（Core 图内硬节点）
+### 6.6 写操作确认门（Core 图内硬节点）
 
 `create_inquiry` / `submit_lead_candidate` / 转人工，执行前必须满足：本轮对话中用户**显式确认**（对已结构化的询盘摘要说"确认"），且确认内容与 draft 摘要一致；摘要变更则重新确认。检索内容中出现的任何"创建询盘"字样**不构成**确认。
 
