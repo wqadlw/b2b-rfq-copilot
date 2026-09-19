@@ -242,6 +242,42 @@ class PgVectorStore:
         logger.info("pgvector_store.search", hits=len(scored))
         return scored
 
+    async def keyword_search(
+        self, tokens: list[str], top_k: int = 10, trust_levels: set[str] | None = None
+    ) -> list[ScoredChunk]:
+        """关键词通道（01-port-spec §6.4）：ILIKE 精确匹配（本仓规模顺序扫描可接受）。"""
+        import asyncpg
+
+        if not tokens:
+            return []
+        patterns = ["%" + token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for token in tokens]
+        conn = await asyncpg.connect(self._dsn)
+        try:
+            if trust_levels:
+                rows = await conn.fetch(
+                    """SELECT doc_id, chunk_index, title, content, metadata
+                    FROM knowledge_chunks
+                    WHERE content ILIKE ANY($1::text[]) AND metadata->>'trust_level' = ANY($2::text[])
+                    ORDER BY doc_id, chunk_index LIMIT $3""",
+                    patterns,
+                    sorted(trust_levels),
+                    top_k,
+                )
+            else:
+                rows = await conn.fetch(
+                    """SELECT doc_id, chunk_index, title, content, metadata
+                    FROM knowledge_chunks
+                    WHERE content ILIKE ANY($1::text[])
+                    ORDER BY doc_id, chunk_index LIMIT $2""",
+                    patterns,
+                    top_k,
+                )
+        finally:
+            await conn.close()
+        scored = [ScoredChunk(chunk=_chunk_from_row(row), score=1.0) for row in rows]
+        logger.info("pgvector_store.keyword_search", tokens=len(tokens), hits=len(scored))
+        return scored
+
     async def remove_by_doc_id(self, doc_id: str) -> int:
         import asyncpg
 

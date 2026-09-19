@@ -9,6 +9,7 @@ from typing import Protocol
 
 from rfq_copilot.core.rag.chunking import Chunk
 from rfq_copilot.core.rag.embedding import cosine
+from rfq_copilot.core.rag.keyword import extract_keywords
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,12 @@ class VectorStore(Protocol):
         self, query_vector: list[float], top_k: int = 5, trust_levels: set[str] | None = None
     ) -> list[ScoredChunk]: ...
 
+    async def keyword_search(
+        self, tokens: list[str], top_k: int = 10, trust_levels: set[str] | None = None
+    ) -> list[ScoredChunk]:
+        """关键词通道（01-port-spec §6.4）：tokens 由 extract_keywords 产出（唯一事实源）。"""
+        ...
+
     async def remove_by_doc_id(self, doc_id: str) -> int: ...
 
     async def count(self) -> int: ...
@@ -31,14 +38,31 @@ class VectorStore(Protocol):
 
 @dataclass
 class InMemoryVectorStore:
-    """Cosine over all chunks（demo/CI 规模 ≤ 数百 chunk；prod 走 PgVectorStore HNSW）。"""
+    """Cosine over all chunks（demo/CI 规模 ≤ 数百 chunk；prod 走 PgVectorStore HNSW）。
+
+    关键词通道（§6.4）：惰性倒排索引——首次 keyword_search 时建，add/remove 失效。
+    """
 
     rows: list[tuple[Chunk, list[float]]] = field(default_factory=list)
+    _inverted: dict[str, set[int]] | None = None
+
+    def _index(self) -> dict[str, set[int]]:
+        if self._inverted is None:
+            index: dict[str, set[int]] = {}
+            for i, (chunk, _) in enumerate(self.rows):
+                for token in set(extract_keywords(f"{chunk.title}\n{chunk.content}")):
+                    index.setdefault(token, set()).add(i)
+            self._inverted = index
+        return self._inverted
+
+    def _invalidate(self) -> None:
+        self._inverted = None
 
     async def add(self, chunks: list[Chunk], vectors: list[list[float]]) -> int:
         if len(chunks) != len(vectors):
             raise ValueError("chunks/vectors length mismatch")
         self.rows.extend(zip(chunks, vectors, strict=True))
+        self._invalidate()
         return len(chunks)
 
     async def search(
@@ -52,10 +76,28 @@ class InMemoryVectorStore:
         scored.sort(key=lambda s: s.score, reverse=True)
         return scored[:top_k]
 
+    async def keyword_search(
+        self, tokens: list[str], top_k: int = 10, trust_levels: set[str] | None = None
+    ) -> list[ScoredChunk]:
+        if not tokens:
+            return []
+        index = self._index()
+        counts: dict[int, int] = {}
+        for token in tokens:
+            for i in index.get(token, ()):
+                if trust_levels is None or self.rows[i][0].trust_level in trust_levels:
+                    counts[i] = counts.get(i, 0) + 1
+        scored = [
+            ScoredChunk(chunk=self.rows[i][0], score=float(hits))
+            for i, hits in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+        ]
+        return scored[:top_k]
+
     async def remove_by_doc_id(self, doc_id: str) -> int:
         """Remove all chunks belonging to a document; returns count removed."""
         before = len(self.rows)
         self.rows = [(c, v) for c, v in self.rows if c.doc_id != doc_id]
+        self._invalidate()
         return before - len(self.rows)
 
     async def count(self) -> int:

@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # 08-knowledge-export-spec §4：知识语料保鲜阈值（天）——corpus age 超过即 stale 告警
     rag_stale_days: int = 14
 
+    # 01-port-spec §6.4：混合检索（向量+关键词 RRF）——false 回落纯向量单路
+    rag_hybrid: bool = True
+
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
