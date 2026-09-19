@@ -525,12 +525,23 @@ def create_app() -> FastAPI:
         from rfq_copilot.core.rag.chunking import chunk_document
         from rfq_copilot.ports.knowledge_source import KnowledgeDocument
 
+        params = body.get("params")
+        if params is not None and not (
+            isinstance(params, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in params.items())
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_PARAMS", "message": "params 必须是字符串到字符串的映射"},
+            )
         doc = KnowledgeDocument(
             doc_id=doc_id,
             title=title,
             doc_type=body.get("doc_type", "platform_faq"),
             trust_level=trust,
             content=content,
+            supplier_id=body.get("supplier_id") or None,
+            product_id=body.get("product_id") or None,
+            params=params or None,
         )
         chunks = chunk_document(doc)
         await rt.deps.rag.ingest(chunks)

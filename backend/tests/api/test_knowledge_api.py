@@ -94,3 +94,34 @@ def test_add_and_remove_roundtrip(client: TestClient) -> None:
     r = client.delete("/api/v1/knowledge/test-kb-001", headers=headers)
     assert r.status_code == 200
     assert r.json()["chunks_removed"] >= 1
+
+
+def test_post_accepts_optional_metadata_fields(client: TestClient) -> None:
+    """03-api-spec：可选 supplier_id/product_id/params 透传（阶段 3 站点 webhook 依赖）。"""
+    headers = {"X-Internal-Token": TOKEN}
+    r = client.post(
+        "/api/v1/knowledge",
+        json={
+            "doc_id": "offline-product-webhook-test",
+            "title": "Webhook 测试泵",
+            "doc_type": "product",
+            "trust_level": "merchant",
+            "content": "产品名称：Webhook 测试泵\n主要参数：\n抽气速率：250",
+            "supplier_id": "sup-1",
+            "product_id": "p-1",
+            "params": {"抽气速率": "250", "无油": "是"},
+        },
+        headers=headers,
+    )
+    assert r.status_code == 200 and r.json()["status"] == "ingested"
+    client.delete("/api/v1/knowledge/offline-product-webhook-test", headers=headers)
+
+
+def test_post_rejects_non_string_params(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/knowledge",
+        json={"doc_id": "t2", "title": "t", "content": "c", "params": {"抽速": 250}},
+        headers={"X-Internal-Token": TOKEN},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "INVALID_PARAMS"
