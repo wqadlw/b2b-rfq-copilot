@@ -18,9 +18,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -522,6 +524,48 @@ def build_documents(seeders_dir: Path) -> EtlOutput:
 
 
 # ---------------------------------------------------------------------------
+# export manifest / diff (08-knowledge-export-spec §1~§3)
+# ---------------------------------------------------------------------------
+
+
+def content_hash(doc: KnowledgeDocument) -> str:
+    """覆盖全部检索语义字段的幂等哈希（不含时间戳等非语义字段）。"""
+    raw = f"{doc.doc_id}\n{doc.title}\n{doc.doc_type}\n{doc.trust_level}\n{doc.content}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def build_manifest(
+    documents: list[KnowledgeDocument], source_dir: Path, generated_at: str | None = None
+) -> dict[str, Any]:
+    return {
+        "manifest_version": 1,
+        "generated_at": generated_at or datetime.now(UTC).isoformat(),
+        "source_dir": str(source_dir.resolve()),
+        "document_count": len(documents),
+        "documents": {doc.doc_id: {"title": doc.title, "content_hash": content_hash(doc)} for doc in documents},
+    }
+
+
+def diff_manifests(old: dict[str, Any], new: dict[str, Any], sample_limit: int = 20) -> dict[str, Any]:
+    """08-knowledge-export-spec §3：added/removed/changed 三类判定，纯信息性。"""
+    old_docs = old.get("documents", {})
+    new_docs = new.get("documents", {})
+    added = sorted(set(new_docs) - set(old_docs))
+    removed = sorted(set(old_docs) - set(new_docs))
+    changed = sorted(doc_id for doc_id in set(old_docs) & set(new_docs) if old_docs[doc_id] != new_docs[doc_id])
+
+    def _sample(ids: list[str]) -> dict[str, Any]:
+        return {"count": len(ids), "samples": ids[:sample_limit]}
+
+    return {
+        "added": _sample(added),
+        "removed": _sample(removed),
+        "changed": _sample(changed),
+        "unchanged_count": len(set(old_docs) & set(new_docs)) - len(changed),
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -548,6 +592,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="只出统计报告，不落盘（默认）")
     parser.add_argument("--json", dest="json_path", help="导出中间 JSON 供审查")
     parser.add_argument("--output-dir", help="知识 JSON 落盘目录（受安全规则约束）")
+    parser.add_argument(
+        "--diff-from",
+        dest="diff_from",
+        help="对比基线目录（读取其 export_manifest.json 出差异报告，纯信息性）",
+    )
     parser.add_argument("--force", action="store_true", help="越过输出目录安全检查（慎用）")
     args = parser.parse_args(argv)
 
@@ -594,11 +643,34 @@ def main(argv: list[str] | None = None) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         payload = {"stats": output.stats, "documents": [doc.model_dump() for doc in output.documents]}
         (out_dir / "knowledge.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        manifest = build_manifest(output.documents, source_dir)
+        (out_dir / "export_manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
         log_path = out_dir / "etl_filtered.log"
         with log_path.open("w", encoding="utf-8") as handle:
             for item in output.filtered_log:
                 handle.write(f"{item.reason}\t{item.source}\t{item.key}\n")
-        print(f"output written: {out_dir} (含 etl_filtered.log)")
+        print(f"output written: {out_dir} (含 etl_filtered.log, export_manifest.json)")
+        if args.diff_from:
+            baseline = Path(args.diff_from) / "export_manifest.json"
+            if not baseline.is_file():
+                raise SystemExit(f"拒绝：基线清单不存在（spec §3 明确失败优于静默全量误报）：{baseline}")
+            try:
+                old_manifest = json.loads(baseline.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"拒绝：基线清单损坏（{baseline}）：{exc}") from exc
+            report = diff_manifests(old_manifest, manifest)
+            report["baseline"] = str(baseline)
+            report["generated_at"] = manifest["generated_at"]
+            diff_path = out_dir / "diff_report.json"
+            diff_path.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(
+                "diff vs baseline: "
+                f"added={report['added']['count']} removed={report['removed']['count']} "
+                f"changed={report['changed']['count']} unchanged={report['unchanged_count']}"
+            )
+            print(f"diff report written: {diff_path}")
     return 0
 
 

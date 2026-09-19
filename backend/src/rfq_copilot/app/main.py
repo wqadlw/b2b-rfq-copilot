@@ -465,7 +465,14 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
         rt = get_runtime()
-        return HealthResponse(status="ok", adapter=rt.manifest.adapter, profile="demo")
+        freshness = rt.corpus_freshness
+        return HealthResponse(
+            status="ok",
+            adapter=rt.manifest.adapter,
+            profile="demo",
+            corpus_age_days=freshness.age_days if freshness is not None else None,
+            corpus_stale=freshness.stale if freshness is not None else False,
+        )
 
     @app.get("/api/v1/sessions/{session_id}/messages")
     async def messages(session_id: str, request: Request) -> dict[str, Any]:

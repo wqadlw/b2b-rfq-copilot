@@ -64,3 +64,6 @@ class HealthResponse(BaseModel):
     status: str
     adapter: str
     profile: str
+    # 08-knowledge-export-spec §5：语料新鲜度（离线知识模式携带；demo 模式缺省）
+    corpus_age_days: float | None = None
+    corpus_stale: bool = False

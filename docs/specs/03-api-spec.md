@@ -98,6 +98,8 @@
 
 ### GET /api/v1/health → `{"status":"ok","adapter":"demo","profile":"demo|prod"}`
 
+离线知识模式（`KNOWLEDGE_DATA_DIR` 非空）额外携带语料新鲜度（08-knowledge-export-spec §4/§5）：`"corpus_age_days": <float|null>, "corpus_stale": <bool>`；demo 模式不携带。
+
 ## 4.5 坐席接管（CS-1，全部需 X-Internal-Token）
 
 会话状态机：`bot_serving`（AI 服务中）→ `handoff_pending`（待人工接管，handoff 路由触发）→ `human_serving`（人工服务中）→ `closed`（已结束）。状态存于 SessionStore，随会话生命周期存在。
