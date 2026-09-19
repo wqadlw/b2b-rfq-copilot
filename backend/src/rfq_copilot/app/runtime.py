@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 from langgraph.checkpoint.memory import MemorySaver
 
 from rfq_copilot.adapters.demo import data as demo_data
+from rfq_copilot.app.freshness import CorpusFreshness, load_corpus_freshness
 from rfq_copilot.app.metrics import MetricsRegistry
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.core.agent.graph import GraphDeps, build_graph
@@ -29,6 +31,7 @@ from rfq_copilot.ports.knowledge_source import KnowledgeDocument
 
 ADAPTERS_DIR = Path(__file__).resolve().parent.parent / "adapters"
 POISONED_IDS = frozenset({"demo-kb-poison-001", "demo-kb-poison-002", "demo-kb-poison-003"})
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,6 +44,8 @@ class Runtime:
     faq_registry: FaqRegistry | None = None  # CS-faq: 运营可变 FAQ 库（app 层运营件）
     checkpointer: Any = None  # 由 init_checkpointer 按配置替换（memory 默认）
     checkpointer_conn: Any = None  # sqlite 连接句柄（shutdown 时关闭）
+    # 08-knowledge-export-spec §4：离线知识模式下的语料新鲜度（demo 数据为 None）
+    corpus_freshness: "CorpusFreshness | None" = None
 
 
 def _adapter_module(adapter: str) -> Any:
@@ -91,6 +96,19 @@ async def seed_demo(runtime: Runtime) -> None:
         docs = list(demo_data.DOCS) + list(demo_data.POISON_DOCS)
     chunks = [chunk for doc in docs for chunk in chunk_document(doc)]
     await rag.ingest(chunks)
+    # 08-knowledge-export-spec §4：语料保鲜——只告警不阻断
+    settings = get_settings()
+    if knowledge_dir:
+        runtime.corpus_freshness = load_corpus_freshness(knowledge_dir, settings.rag_stale_days)
+        freshness = runtime.corpus_freshness
+        if freshness is not None and freshness.stale:
+            logger.warning(
+                "知识语料已过期：age=%.1f 天 > 阈值 %d 天（source=%s, docs=%d）——请重跑知识导出",
+                freshness.age_days or 0.0,
+                settings.rag_stale_days,
+                freshness.source,
+                freshness.doc_count,
+            )
 
 
 def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> Runtime:

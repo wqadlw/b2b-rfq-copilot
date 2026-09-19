@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     rag_store: str = "inmemory"
     rag_pgvector_dsn: str = ""  # rag_store=pgvector 时必填
 
+    # 08-knowledge-export-spec §4：知识语料保鲜阈值（天）——corpus age 超过即 stale 告警
+    rag_stale_days: int = 14
+
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
