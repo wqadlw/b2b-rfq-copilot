@@ -80,5 +80,38 @@ README 引用的数字只能来自报告文件；未上线版本禁称生产指�
 3. C 族只增不改；golden set 变更须注明触发原因（bad case 链接/新功能）。
 4. 评测在 CI 中随 pytest 运行（demo profile，无需真实 LLM Key 的用例用录制回放；真实模型用例标记 `@eval_live` 每日跑）。
 
+## 7. 检索侧评测（RAGAS 对标 · 确定性代理，2026-09-19 新增）
+
+RAGAS 的 context recall/precision 依赖 LLM-as-judge（成本 + 网络进 CI，违反 §0 零 token 纪律）。
+本节定义**确定性代理指标**：golden 集从语料自监督派生（规则模板，从文档自身字段生成查询，
+期望命中文档即该文档），judge 由"是否命中期望文档"替代——可复现、零成本、随 pytest 跑。
+
+### 7.1 golden 派生规则
+
+| doc_type | 查询模板（每文档至多 2 条） |
+|---|---|
+| `product` | `{title} 的参数和价格是多少` / `有没有 {title} 这款产品` |
+| `selection_guide` | `{title} 怎么选型` / `{title} 的工艺难点和市场价值` |
+| `platform_faq` | `{title}` / `{title} 怎么解决` |
+
+- 期望文档：查询来源文档自身（`doc_id` 去除分块后缀 ` (i/n)` 后的基 id）。
+- 派生器变更 = 本规格版本变更（同 §6.2）。
+
+### 7.2 指标（k=5，与 RAGAS 对应关系）
+
+| 指标 | 确定性定义 | RAGAS 对应 |
+|---|---|---|
+| `recall@5` | top-5 中至少一块来自期望文档的用例占比 | context recall（覆盖率代理） |
+| `precision@5` | top-5 中来自期望文档的块数占比（均值） | context precision（纯度代理，下界口径） |
+| `mrr` | 首个期望文档命中位次的倒数均值 | 排序质量 |
+
+### 7.3 门禁与报告
+
+- 门禁：`recall@5 ≥ RETRIEVAL_EVAL_MIN_RECALL`（默认 0.85，env 可覆盖）——低于即脚本 exit 1。
+- 报告：`eval/reports/YYYY-MM-DD_retrieval.md` + `.json`，含按 doc_type 分项。
+- demo profile（CI）与离线真实数据 profile（本地 `KNOWLEDGE_DATA_DIR`）共用同一实现；
+  报告必须注明语料来源（demo / 离线快照路径）。
+- precision 为**下界口径**：同查询的其他真实相关文档不计入相关集，不得用于对外宣传。
+
 ---
-*维护者：工程组 · 派生器实现于 `core/eval/deriver.py`*
+*维护者：工程组 · 派生器实现于 `core/eval/deriver.py` · 检索评测实现于 `core/rag/retrieval_eval.py`*
