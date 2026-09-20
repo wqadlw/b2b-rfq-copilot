@@ -91,3 +91,34 @@ def test_selection_guard_does_not_mutate_input() -> None:
     snapshot = dict(original)
     apply_selection_guard("无油泵和旋片泵怎么选？", original)
     assert original == snapshot
+
+
+# ---------------------------------------------------------------------------
+# B5：select_search_keyword 头二字放宽（LLM 规范化实体 vs 用户口语说法）
+# ---------------------------------------------------------------------------
+
+from rfq_copilot.core.agent.routing_guards import select_search_keyword  # noqa: E402
+
+
+def test_normalized_category_entity_accepted_via_head_bigram() -> None:
+    """用户说「无油泵」，LLM 规范化实体为「无油真空泵」→ 采纳实体（勿整句搜索）。"""
+    understanding = {"entities": {"product_category": "无油真空泵"}}
+    got = select_search_keyword("有哪些无油泵适合实验室？", understanding)
+    assert got == "无油真空泵"
+
+
+def test_exact_containment_still_preferred() -> None:
+    understanding = {"entities": {"product_category": "旋片泵"}}
+    got = select_search_keyword("帮我找旋片泵", understanding)
+    assert got == "旋片泵"
+
+
+def test_stale_entity_with_unrelated_head_rejected() -> None:
+    """陈旧实体的头二字不在本轮消息中 → 拒绝，退回原消息。"""
+    understanding = {"entities": {"product_category": "罗茨泵"}}
+    got = select_search_keyword("有哪些无油泵适合实验室？", understanding)
+    assert got == "有哪些无油泵适合实验室？"
+
+
+def test_no_entities_falls_back_to_message() -> None:
+    assert select_search_keyword("有哪些无油泵？", None) == "有哪些无油泵？"
