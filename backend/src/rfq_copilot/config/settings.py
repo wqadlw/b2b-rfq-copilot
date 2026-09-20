@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # 08-knowledge-export-spec §4：知识语料保鲜阈值（天）——corpus age 超过即 stale 告警
     rag_stale_days: int = 14
 
+    # 08-knowledge-export-spec §6：引擎内置每日兜底刷新（webhook 防丢失的定时兜底）
+    knowledge_refresh_enabled: bool = False  # 显式 opt-in；测试/CI 不启用
+    knowledge_source_dir: str = ""  # 站点 database/seeders 目录；缺失则调度器禁用并 WARN
+    knowledge_refresh_interval_hours: int = 24  # 启动 60s 宽限首跑，此后按间隔循环
+
     # 01-port-spec §6.4：混合检索（向量+关键词 RRF）——false 回落纯向量单路
     rag_hybrid: bool = True
 

@@ -23,6 +23,7 @@ from rfq_copilot.app.guest_paths import (
     guest_supplier_answer,
     looks_like_knowledge_query,
 )
+from rfq_copilot.app.knowledge_refresh import start_knowledge_refresh
 from rfq_copilot.app.limiter import DailyTokenBudget, SlidingWindowLimiter
 from rfq_copilot.app.metrics import VALID_PERIODS
 from rfq_copilot.app.runtime import (
@@ -136,9 +137,12 @@ def create_app() -> FastAPI:
         runtime = get_runtime()
         await init_checkpointer(runtime)
         await seed_demo(runtime)
+        refresh_task = start_knowledge_refresh(runtime)  # 08-spec §6：门禁不满足返回 None
         try:
             yield
         finally:
+            if refresh_task is not None:
+                refresh_task.cancel()
             await close_checkpointer(runtime)
 
     app = FastAPI(title="b2b-rfq-copilot", version="0.1.0", lifespan=lifespan)
@@ -472,6 +476,7 @@ def create_app() -> FastAPI:
             profile="demo",
             corpus_age_days=freshness.age_days if freshness is not None else None,
             corpus_stale=freshness.stale if freshness is not None else False,
+            knowledge_refresh=rt.last_refresh,
         )
 
     @app.get("/api/v1/sessions/{session_id}/messages")
