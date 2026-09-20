@@ -3,6 +3,23 @@ adapter: vacuum_b2b_sample
 display_name: "Vacuum Industry B2B (Sample)"
 languages: [zh-CN]
 
+chat:
+  # 开场引导（业界基准：自我介绍 + 能力清单 + 工况引导句；忌推销腔）
+  welcome_message: "您好，我是找真空 AI 采购助手。可以帮您：查产品参数、对比机型选型、匹配供应商、直接创建询盘。选型拿不准时，把工况（抽速、真空度、介质）告诉我即可。"
+  # 空态例问（覆盖四大 job：选型对比 / 带参找产品 / 参数确认 / 询盘闭环）
+  suggested_questions:
+    - "无油泵和旋片泵怎么选？"
+    - "帮我找抽速 100 m³/h 以上的真空泵"
+    - "实验室用无油真空泵有哪些推荐？"
+    - "罗茨泵的极限真空能到多少？"
+    - "帮我创建一台真空泵的询盘"
+    - "真空泵维修保养找谁？"
+  wechat:
+    # CS-1.5: demo placeholder — real QR belongs to the site-side private config (repo-policy)
+    qrcode_url: "/demo-assets/demo-wechat-qr.svg"
+    contact_name: "找真空工程师"
+    guidance_text: "扫码添加工程师微信，一对一快速响应"
+
 ports:
   product_catalog:
     enabled: true
