@@ -24,6 +24,7 @@ trace (``route_guard`` / ``route_guard_from``) for evals and analytics.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 # 产品问法：用户在问"有什么 / 哪些 / 型号 / 规格 / 推荐 / 选型"
@@ -58,6 +59,60 @@ SUPPLIER_FOCUS_MARKERS: tuple[str, ...] = (
 )
 
 GUARD_NAME = "product_over_supplier"
+
+# ---------------------------------------------------------------------------
+# 选型问法护栏（ADR-0008 D1）：类型级选型咨询 → knowledge_flow（RAG 选型指南作答）
+# ---------------------------------------------------------------------------
+
+# 类型级选型/对比咨询标记（问的是"类与类之间怎么选"，不是找具体产品）
+SELECTION_CONSULT_MARKERS: tuple[str, ...] = (
+    "怎么选",
+    "如何选",
+    "怎么挑选",
+    "如何挑选",
+    "哪个好",
+    "哪种好",
+    "有什么区别",
+    "有啥区别",
+    "的区别",
+    "优缺点",
+    "选哪个",
+)
+
+# 产品编号形态（compare_flow 的合法输入；出现两个编号 = 真产品对比，不拦截）
+_PRODUCT_ID_PATTERN = re.compile(r"[a-z0-9]+-p-\d+|\d{3,}")
+
+SELECTION_GUARD_NAME = "selection_over_search"
+
+
+def apply_selection_guard(message: str, understanding: dict[str, Any]) -> dict[str, Any]:
+    """类型级选型咨询误入产品搜索/对比路由时，改道 knowledge_flow（ADR-0008 D1）。
+
+    窄口径三条件同时满足才触发：
+    route ∈ {product_flow, selection_flow, compare_flow}
+    AND 消息命中选型咨询标记
+    AND 消息不含两个产品编号（真产品对比不受影响）。
+    纯函数；记录 route_guard 审计轨迹。
+    """
+    route = str(understanding.get("route") or "")
+    if route not in {"product_flow", "selection_flow", "compare_flow"}:
+        return understanding
+    text = (message or "").strip()
+    if not any(marker in text for marker in SELECTION_CONSULT_MARKERS):
+        return understanding
+    if len(_PRODUCT_ID_PATTERN.findall(text)) >= 2:
+        return understanding  # 点名了两个具体产品 → compare_flow 的合法场景
+
+    corrected = dict(understanding)
+    corrected["route"] = "knowledge_flow"
+    corrected["intent"] = "selection_inquiry"
+    corrected["route_guard"] = SELECTION_GUARD_NAME
+    corrected["route_guard_from"] = {
+        "intent": understanding.get("intent"),
+        "route": understanding.get("route"),
+    }
+    return corrected
+
 
 # 询盘创建关键词（单一事实源）：graph 短路与游客 gate 共用
 INQUIRY_CREATE_MARKERS: tuple[str, ...] = ("询盘", "询价", "要买", "求购")
