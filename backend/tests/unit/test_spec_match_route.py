@@ -4,6 +4,8 @@
 （demo 数据抽速上限 21 m³/h，100 的正向匹配在 demo 数据上必然走无匹配兜底）。
 """
 
+import pytest
+
 from conftest import make_deps, understanding
 from rfq_copilot.core.agent.graph import build_graph, parse_understanding
 from rfq_copilot.ports.product_catalog import (
@@ -98,3 +100,45 @@ async def test_spec_match_flow_matches_real_demo_data() -> None:
     assert "spec_match" in final["tool_calls"]
     assert "最匹配" in final["answer"]
     assert "demo 设备" in final["answer"]
+
+
+# ---------------------------------------------------------------------------
+# ADR-0008 D2：knowledge_flow 回答注入对话历史
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_knowledge_answer_includes_conversation_history() -> None:
+    """knowledge_flow 的回答 LLM user 段必须包含历史轮次（多轮指代可解析）。"""
+    deps, _ = make_deps(
+        scripted=[
+            understanding("spec_inquiry", "knowledge_flow"),
+            {"text_chunks": ["无油泵免维护，适合洁净环境。"]},
+        ]
+    )
+    # 预置两轮历史（本轮 user 消息由 understand 节点自行 append）
+    deps.store.append_message("kh1", "user", "什么是无油泵？")
+    deps.store.append_message("kh1", "assistant", "无油泵是不使用真空油的泵型。")
+    graph = build_graph(deps)
+    await graph.ainvoke({"session_id": "kh1", "message": "它适合什么场景？"})
+    # FakeLLM.calls: [(understand system, user), (answer system, user)]
+    answer_user = deps.llm.calls[-1][1]
+    assert "【对话历史（最近轮次）】" in answer_user
+    assert "什么是无油泵？" in answer_user  # 上一轮问题在历史里
+    assert "【问题】它适合什么场景？" in answer_user
+
+
+@pytest.mark.asyncio
+async def test_knowledge_answer_first_turn_has_no_history_block() -> None:
+    """首轮（无历史）不输出空历史段——保持 prompt 干净。"""
+    deps, _ = make_deps(
+        scripted=[
+            understanding("spec_inquiry", "knowledge_flow"),
+            {"text_chunks": ["首轮回答。"]},
+        ]
+    )
+    graph = build_graph(deps)
+    await graph.ainvoke({"session_id": "kh2", "message": "真空泵怎么选？"})
+    answer_user = deps.llm.calls[-1][1]
+    assert "【对话历史" not in answer_user
+    assert "【问题】真空泵怎么选？" in answer_user

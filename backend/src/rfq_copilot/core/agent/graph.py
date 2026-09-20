@@ -20,6 +20,7 @@ from rfq_copilot.core.agent.llm import LLMClient
 from rfq_copilot.core.agent.routing_guards import (
     INQUIRY_CREATE_MARKERS,
     apply_routing_guards,
+    apply_selection_guard,
     detect_inquiry_status_query,
     select_search_keyword,
 )
@@ -476,7 +477,19 @@ def _respond_node(deps: GraphDeps) -> Any:
                 + deps.prompts.render("security_constitution")
             )
             answer_system += "\n\n" + deps.prompts.render("citation_required_answer")
-            answer_user = "【问题】" + message + "\n\n【资料】\n" + context
+            # ADR-0008 D2：回答 LLM 注入最近 4 轮对话（每条截断 120 字符）——
+            # 多轮指代（"它多少钱""第一个呢"）此前只进了意图提取，回答层完全失忆。
+            answer_history = deps.store.messages(state["session_id"])[-9:-1]  # 去掉本轮 user 消息
+            history_text = "\n".join(
+                f"{m.get('role', '')}: {str(m.get('content', ''))[:120]}" for m in answer_history
+            )
+            answer_user = (
+                (f"【对话历史（最近轮次）】\n{history_text}\n\n" if history_text.strip() else "")
+                + "【问题】"
+                + message
+                + "\n\n【资料】\n"
+                + context
+            )
             pieces: list[str] = []
             try:
                 async for token in deps.llm.stream_text(answer_system, answer_user):
@@ -771,7 +784,7 @@ def _understand_node(deps: GraphDeps) -> Any:
         u = _understanding_from_tools(state, deps)
         if u is None:
             history = deps.store.messages(state["session_id"])[-6:]
-            history_text = "\n".join(f"{m.get('role', '')}: {str(m.get('content', ''))[:80]}" for m in history)
+            history_text = "\n".join(f"{m.get('role', '')}: {str(m.get('content', ''))[:120]}" for m in history)
             system = deps.prompts.render(
                 "base_constitution",
                 display_name=deps.manifest.display_name,
@@ -796,6 +809,10 @@ def _understand_node(deps: GraphDeps) -> Any:
         # 确定性护栏：修正分类器在产品问法/供应商问法之间的摇摆（见 routing_guards 模块）
         u = apply_routing_guards(state.get("message", ""), u)
         if u.get("route_guard"):
+            events.append(("status", {"message": "正在整理回答"}))
+        # ADR-0008 D1：类型级选型咨询误入产品搜索路由 → 改道 knowledge_flow（RAG 作答）
+        u = apply_selection_guard(state.get("message", ""), u)
+        if u.get("route_guard") == "selection_over_search":
             events.append(("status", {"message": "正在整理回答"}))
         return {"understanding": u, "route": str(u["route"]), "events": events}
 
