@@ -295,7 +295,9 @@ export function ChatWidget({
   // 选型表单卡提交：标记该卡已提交（持久化）并按组装的工况消息发起匹配
   const handleWizardSubmit = (index: number, message: string): void => {
     setMessages((prev) =>
-      prev.map((m, i) => (i === index && m.selectionForm ? { ...m, selectionForm: { submitted: true } } : m)),
+      prev.map((m, i) =>
+        i === index && m.selectionForm ? { ...m, selectionForm: { submitted: true, summary: message } } : m,
+      ),
     );
     void send(message);
   };
@@ -583,6 +585,7 @@ export function ChatWidget({
             {message.selectionForm && (
               <SelectionWizardCard
                 submitted={!!message.selectionForm.submitted}
+                summary={message.selectionForm.summary}
                 disabled={busy}
                 onSubmit={(msg) => handleWizardSubmit(index, msg)}
               />
