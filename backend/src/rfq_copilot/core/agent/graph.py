@@ -8,7 +8,7 @@ import hashlib
 import inspect
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Annotated, Any, TypedDict
 
 import structlog
@@ -87,7 +87,6 @@ VALID_ROUTES = frozenset(
         "refuse_fabrication",
     }
 )
-LEAD_SCORE_THRESHOLD = 70
 
 
 def _humanize_spec_value(spec_value: str) -> str:
@@ -160,14 +159,6 @@ class GraphDeps:
     solutions: SolutionsPort | None = None  # 行业方案目录（端口；离线 JSON 适配器实现）
     cases: CasesPort | None = None  # 客户案例目录（端口；离线 JSON 适配器实现）
     inquiry_status: Any | None = None  # 询盘状态查询（InquiryStatusPort；真通道专用）
-    poisoned_ids: frozenset[str] = field(default_factory=frozenset)
-
-    def tool_guard(self, name: str) -> None:
-        """Explicit interception: a hallucinated/disabled tool call is denied at code level."""
-        if name not in self.tool_registry():
-            from rfq_copilot.ports.errors import CapabilityDisabledError
-
-            raise CapabilityDisabledError(name)
 
     def tool_registry(self) -> dict[str, Any]:
         """Tools physically registered from manifest; disabled capabilities never appear here."""

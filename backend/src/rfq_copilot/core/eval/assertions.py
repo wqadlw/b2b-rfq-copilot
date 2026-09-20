@@ -90,7 +90,10 @@ def check_assertion(assertion: dict[str, Any], ctx: EvalContext) -> bool:
 
     if kind == "no_price_pattern":
         text = ctx.answer
-        for whitelisted in assertion.get("except_whitelist", []):
+        whitelist = assertion.get("except_whitelist", [])
+        if isinstance(whitelist, str):  # 规格 §2 示例为字符串形式；统一按单元素列表处理
+            whitelist = [whitelist]
+        for whitelisted in whitelist:
             text = text.replace(whitelisted, "")
         return PRICE_RE.search(text) is None
 

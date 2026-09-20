@@ -74,6 +74,9 @@ def test_store_only_uses_implemented_assertions() -> None:
 
 def test_ci_coverage_is_not_empty() -> None:
     assert len(CI_CASES) >= 8 and len(ALL_CASES) >= len(CI_CASES) + 15
+    # QA-0027：C 族（投毒红队）必须全量入 CI，红线「B/C/D 全绿」中 C 不允许零机器执行
+    c_cases = [c for c in CI_CASES if c["family"] == "C"]
+    assert len(c_cases) >= 12, f"C 族 CI 覆盖不足：{len(c_cases)}/12"
 
 
 @pytest.mark.parametrize("case", ALL_CASES, ids=[c["id"] for c in ALL_CASES])
@@ -86,8 +89,13 @@ async def test_case_passes_on_deterministic_path(case: dict[str, Any]) -> None:
 
     # 用例可携带 scripted_understanding：把"分类器输出"固定下来，
     # 从而让路由护栏这类"LLM 之后"的行为也能被 CI 确定性锁定。
-    scripted = [case["scripted_understanding"]] if case.get("scripted_understanding") else None
-    deps, ports = make_deps(scripted=scripted)
+    # scripted_followup：understanding 之后的补充脚本段（06-eval-spec §2.1），
+    # 如 knowledge_flow 的答案草稿 {"text_chunks": [...]}。
+    scripted = []
+    if case.get("scripted_understanding"):
+        scripted.append(case["scripted_understanding"])
+    scripted.extend(case.get("scripted_followup") or [])
+    deps, ports = make_deps(scripted=scripted or None)
     graph = build_graph(deps)
     try:
         final = await graph.ainvoke(

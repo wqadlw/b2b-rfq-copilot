@@ -1,6 +1,7 @@
 # 06 · EVAL SPEC · 评测体系规范
 
-> 密级：公开 · 版本 v1.0 · 2026-09-12 · 权威关联：四族构成与自动派生公式见 `01-port-spec.md` §7（唯一权威）；本文定义用例格式、断言、指标与报告。
+> 密级：公开 · 版本 v1.1 · 2026-09-19 · 权威关联：四族构成与自动派生公式见 `01-port-spec.md` §7（唯一权威）；本文定义用例格式、断言、指标与报告。
+> v1.1 变更：§2 登记 `ci` / `scripted_understanding` / `scripted_followup` 字段；§6 新增 CI 覆盖铁律（C 族全量入 CI）与 baseline 诚实口径（QA-0026/0027）。
 
 ## 1. 四族与合并门禁
 
@@ -33,6 +34,17 @@ B/C/D 任何一条红 = 阻塞合并；LLM 打分不用于 B/C/D。
 ```
 
 命名：`<family>__<capability|topic>__<scenario>__<NNN>`。`preconditions` 声明所需种子数据（demo adapter 提供 seed 钩子）。
+
+### 2.1 CI 执行字段（零 token 门禁专用）
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `ci` | bool | `true` 表示该用例进 CI 确定性执行（`backend/tests/evals/test_eval_gate.py`），单轮限定 |
+| `scripted_understanding` | object | 固定分类器输出（intent/route/entities…），使"LLM 之后"的确定性护栏可在 CI 锁定 |
+| `scripted_followup` | list[object] | understanding 之后的补充脚本段（如 knowledge_flow 的 `{"text_chunks": [...]}` 答案草稿）；未脚本到位即 FakeLLM 耗尽报错——说明该用例不属于 CI |
+
+约定：脚本固定的是**模型输出**，管线行为（路由、检索、引用、端口护栏、模板断言）全部真跑。
+需要真实模型对抗的部分（如 LLM 抵抗投毒）留在 `--live` 人工执行。
 
 ## 3. 断言类型（程序化，可扩展注册）
 
@@ -79,6 +91,18 @@ README 引用的数字只能来自报告文件；未上线版本禁称生产指�
 2. 攻击模板（派生器内）变更 = 本规格版本变更 + CHANGELOG 登记。
 3. C 族只增不改；golden set 变更须注明触发原因（bad case 链接/新功能）。
 4. 评测在 CI 中随 pytest 运行（demo profile，无需真实 LLM Key 的用例用录制回放；真实模型用例标记 `@eval_live` 每日跑）。
+
+### 6.1 CI 覆盖铁律（QA-0027）
+
+- **C 族 12 例全部 `"ci": true`**：投毒回归必须每次提交都机器执行，红线的「B/C/D 全绿」中 C 不允许零机器执行。
+- `test_ci_coverage_is_not_empty` 断言分族覆盖下限：C ≥ 12；破坏下限 = 本规格版本变更。
+- CI 另设独立 `backend · eval baseline` 作业运行 `scripts/run_eval.py`（确定性派生 B 族实机执行，零 token）。
+
+### 6.2 baseline 诚实口径（QA-0026）
+
+- baseline 模式只实机执行派生 B 族；报告中 A/C/D 未执行族必须标「未执行」，
+  **禁止**把未执行族记为 100% 通过。
+- baseline 退出码：派生 B 族存在失败即 `exit 1`（CI 可据此变红）；live 模式维持原语义。
 
 ## 7. 检索侧评测（RAGAS 对标 · 确定性代理，2026-09-19 新增）
 

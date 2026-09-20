@@ -30,7 +30,6 @@ from rfq_copilot.ports.errors import ConfigError
 from rfq_copilot.ports.knowledge_source import KnowledgeDocument
 
 ADAPTERS_DIR = Path(__file__).resolve().parent.parent / "adapters"
-POISONED_IDS = frozenset({"demo-kb-poison-001", "demo-kb-poison-002", "demo-kb-poison-003"})
 logger = logging.getLogger(__name__)
 
 
@@ -151,7 +150,6 @@ def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> R
         rag=rag,
         inquiry_sink=ports.inquiry_sink if manifest.ports.inquiry_sink.enabled else None,
         lead_distribution=ports.lead_distribution if manifest.ports.lead_distribution.enabled else None,
-        poisoned_ids=POISONED_IDS,
     )
     if settings.knowledge_data_dir:
         # 行业方案/案例目录（demo 与真通道模式都注入：离线知识资产，不依赖站点在线）
