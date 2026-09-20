@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { AlertCircle, ArrowUp, CheckCircle2, ClipboardList, Headphones, History, Loader2, MessageSquarePlus, Pencil, Sparkles, Square, X } from "lucide-react";
+import { AlertCircle, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, ClipboardList, ClipboardPen, Headphones, History, Loader2, MessagesSquare, MessageSquarePlus, Pencil, Sparkles, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
 import {
@@ -138,7 +138,9 @@ export function ChatWidget({
   const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
   // 转人工 = 微信工程师二维码弹层（微信一对一即人工主路径；CS-1.5 manifest 二维码配置贯通）
   const [showWechatModal, setShowWechatModal] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  // 工具栏二级菜单："chat"（新对话/历史会话）与 "inquiry"（创建/我的询盘）；
+  // "chat-history" 为「历史会话」的二级列表。
+  const [openMenu, setOpenMenu] = useState<"chat" | "chat-history" | "inquiry" | null>(null);
   const [conversations, setConversations] = useState<SavedConversation[]>([]);
   // 生产态游客登录引导：用户可关闭（会话内不再出现）
   const [showLoginHint, setShowLoginHint] = useState(true);
@@ -234,10 +236,10 @@ export function ChatWidget({
   // 工具栏「新对话」：清空本地消息 + 新建服务端会话，回到空态（欢迎语+推荐 chips）。
   // busy 时禁用（防打断流式）；createSession 失败仅清本地，发送时 send() 自愈重建。
   // 历史会话存档（localStorage，最多 10 条）：「新对话」前自动归档当前会话，
-  // 「历史」面板可随时回到老对话（恢复消息与 session 续聊）。
-  const toggleHistory = (): void => {
-    if (!showHistory) setConversations(loadConversations());
-    setShowHistory(!showHistory);
+  // 「对话 → 历史会话」二级面板可随时回到老对话（恢复消息与 session 续聊）。
+  const openHistoryMenu = (): void => {
+    setConversations(loadConversations());
+    setOpenMenu("chat-history");
   };
 
   const startNewChat = async (): Promise<void> => {
@@ -263,7 +265,7 @@ export function ChatWidget({
     };
     setMessages([welcome]);
     localStorage.setItem("rfq-messages", JSON.stringify([welcome]));
-    setShowHistory(false);
+    setOpenMenu(null);
     stickToBottom.current = true;
   };
 
@@ -278,7 +280,7 @@ export function ChatWidget({
       localStorage.removeItem("rfq-session-id");
     }
     localStorage.setItem("rfq-messages", JSON.stringify(item.messages));
-    setShowHistory(false);
+    setOpenMenu(null);
     stickToBottom.current = true;
   };
 
@@ -716,65 +718,120 @@ export function ChatWidget({
       )}
       {/* Input：容器式 composer（企业级契约：容器承担边框+焦点态，按钮排容器内部不压字；busy 同槽变停止钮） */}
       <form onSubmit={onSubmit} className="relative border-t border-line bg-surface py-2 px-3">
-        {/* 历史会话面板（工具栏上方弹出） */}
-        {showHistory && (
-          <div className="absolute bottom-full left-3 right-3 mb-2 max-h-64 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-lg">
-            {conversations.length === 0 ? (
-              <p className="px-3 py-3 text-xs text-ink-muted">暂无历史会话——点「新对话」后当前会话会自动存档到这里</p>
-            ) : (
-              conversations.map((item, index) => (
-                <button
-                  key={`${item.savedAt}-${index}`}
-                  type="button"
-                  onClick={() => restoreConversation(item)}
-                  disabled={busy}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                >
-                  <span className="truncate">{item.title}</span>
-                  <span className="shrink-0 text-[11px] text-ink-muted">{formatConversationTime(item.savedAt)}</span>
-                </button>
-              ))
-            )}
-          </div>
+        {/* 二级菜单面板（工具栏上方弹出；fixed 透明遮罩点击关闭） */}
+        {openMenu !== null && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpenMenu(null)} aria-hidden="true" />
+            <div className="absolute bottom-full left-3 z-50 mb-2 w-60 rounded-xl border border-line bg-surface p-1 shadow-lg">
+              {openMenu === "chat" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      void startNewChat();
+                    }}
+                    disabled={busy}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
+                  >
+                    <MessageSquarePlus className="h-3.5 w-3.5 text-ink-muted" />
+                    新对话
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openHistoryMenu}
+                    disabled={busy}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
+                  >
+                    <span className="flex items-center gap-2">
+                      <History className="h-3.5 w-3.5 text-ink-muted" />
+                      历史会话
+                    </span>
+                    <ChevronRight className="h-3.5 w-3.5 text-ink-muted" />
+                  </button>
+                </>
+              )}
+              {openMenu === "chat-history" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setOpenMenu("chat")}
+                    className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left text-[11px] text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                    返回
+                  </button>
+                  <div className="max-h-56 overflow-y-auto">
+                    {conversations.length === 0 ? (
+                      <p className="px-3 py-3 text-xs text-ink-muted">暂无历史会话——点「新对话」后当前会话会自动存档到这里</p>
+                    ) : (
+                      conversations.map((item, index) => (
+                        <button
+                          key={`${item.savedAt}-${index}`}
+                          type="button"
+                          onClick={() => restoreConversation(item)}
+                          disabled={busy}
+                          className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
+                        >
+                          <span className="truncate">{item.title}</span>
+                          <span className="shrink-0 text-[11px] text-ink-muted">{formatConversationTime(item.savedAt)}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+              {openMenu === "inquiry" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      quickAsk("帮我创建询盘");
+                    }}
+                    disabled={busy}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
+                  >
+                    <ClipboardPen className="h-3.5 w-3.5 text-ink-muted" />
+                    创建询盘
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      quickAsk("我的询盘有人跟吗");
+                    }}
+                    disabled={busy}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
+                  >
+                    <ClipboardList className="h-3.5 w-3.5 text-ink-muted" />
+                    我的询盘
+                  </button>
+                </>
+              )}
+            </div>
+          </>
         )}
-        {/* 工具栏（常驻，不随消息滚动）：新对话 / 历史 / 快捷动作 / 转人工——
+        {/* 工具栏（常驻，不随消息滚动）：「对话」「询盘」二级菜单 + 转人工——
             转人工自滚动 header 迁入此排：滚到哪都能一键触达（CS-1.5 主路径可达性） */}
         <div className="mb-1.5 flex items-center gap-1 px-1">
           <button
             type="button"
-            onClick={() => void startNewChat()}
-            disabled={busy}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink disabled:opacity-50"
+            onClick={() => setOpenMenu(openMenu === "chat" ? null : "chat")}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
           >
-            <MessageSquarePlus className="h-3.5 w-3.5" />
-            新对话
+            <MessagesSquare className="h-3.5 w-3.5" />
+            对话
+            <ChevronDown className="h-3 w-3" />
           </button>
           <button
             type="button"
-            onClick={toggleHistory}
-            disabled={busy}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink disabled:opacity-50"
-          >
-            <History className="h-3.5 w-3.5" />
-            历史
-          </button>
-          <button
-            type="button"
-            onClick={() => quickAsk("帮我创建询盘")}
-            disabled={busy}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink disabled:opacity-50"
+            onClick={() => setOpenMenu(openMenu === "inquiry" ? null : "inquiry")}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
           >
             <ClipboardList className="h-3.5 w-3.5" />
-            创建询盘
-          </button>
-          <button
-            type="button"
-            onClick={() => quickAsk("我的询盘有人跟吗")}
-            disabled={busy}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink disabled:opacity-50"
-          >
-            <ClipboardList className="h-3.5 w-3.5" />
-            我的询盘
+            询盘
+            <ChevronDown className="h-3 w-3" />
           </button>
           <span className="flex-1" />
           <button
