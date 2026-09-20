@@ -249,6 +249,12 @@ export function ChatWidget({
   ): Promise<void> => {
     if (busy || (!message && !action)) return;
     setBusy(true);
+    // 真实互动标记：供站点主动触达判断"24h 内已聊过则不打扰"（老访客仍可被再触达）
+    try {
+      localStorage.setItem("rfq-chat-activity", String(Date.now()));
+    } catch {
+      /* 隐私模式下静默跳过 */
+    }
     // 自愈：会话创建失败（如引擎重启期间加载的页面）时，发送前自动重建会话
     let sid = sessionId;
     if (sid === null) {
