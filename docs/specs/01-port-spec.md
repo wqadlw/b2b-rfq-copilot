@@ -287,21 +287,38 @@ Policy(c) = RefusalPolicy(
 4. **验收**：检索评测（06-eval-spec §7）真实语料 recall@5 不得低于向量单路基线（0.8550@HashingEmbedder）；
    型号精确查询（如 `RV12-76095b`）在混合模式下必须命中包含该型号的文档。
 
-#### 6.4.1 规格过滤（spec-aware retrieval，2026-09-19 新增）
+#### 6.4.1 规格过滤（spec-aware retrieval，2026-09-19 新增；2026-09-20 单位契约修订 QA-0030/0031/0033）
 
 产品知识块携带结构化参数后，检索入口支持规格条件过滤（复用 `spec_matcher.SpecCriteria`
 与 `extract_spec_criteria`——与 spec_flow 产品匹配同一套条件语义）：
 
 1. **数据面**：`KnowledgeDocument`/`Chunk` 增加可选 `params: dict[str, str]`；导出脚本把产品
    seeder 的 params 原样落入（值非字符串跳过）；pgvector 走 metadata jsonb 往返。
-2. **过滤语义**（`spec_matcher.chunk_matches_spec`）：
-   - `pumping_speed_min`：块 params 中参数键别名查找（**精确名优先，含子串次之**——真实
-     seeder 键名如"抽气速率(50Hz)/抽气速率范围"）取数值 ≥ min 才保留；
-   - `ultimate_vacuum_max`：`极限真空` 类键数值 ≤ max 才保留；
-   - `oil_free=true`：params `无油=是`，或任一参数值含"无油"，或 content/title 含 "无油"。
-3. **回落保护（强制）**：过滤只作用于融合后的召回池；若过滤后候选数 < top_k，**整体回落
-   未过滤结果**——缺参数的知识块（非产品块）绝不因过滤被团灭，宁可放宽不可答空。
-4. **调用方**：respond 节点 knowledge_flow 从 understanding.entities 派生 SpecCriteria
+2. **单位契约（QA-0030，强制）**：抽速基准单位 **m³/h**、真空基准单位 **Pa**；用户条件与
+   产品参数两侧都经 `core/rag/quantities.py::parse_quantity` 归一化后比较，**禁止单位盲比**。
+   解析器必须覆盖站点真实形态：科学计数上标（`≤1×10⁻⁸ Pa`）、区间（`100-1000 m³/h`）、
+   跨单位（hPa/mbar/Torr/mmHg/kPa/MPa；m³/min、L/s、L/min）、`大气压 ~ X` 区间、
+   括号注记剥离（`(50Hz)`/`（配合前级泵）`/`(N₂)`）。产品参数**有数字无单位 → 不可判定**
+   （0.08 可能是 hPa 也可能是 Pa，不猜）；用户实体的裸数字按基准单位解释（实体键即量纲）。
+3. **过滤语义**（`spec_matcher.chunk_matches_spec`）：
+   - `pumping_speed_min`：主抽速参数键别名查找（**精确名优先，含子串次之**——真实
+     seeder 键名如"抽气速率(50Hz)/抽气速率范围"）；**含"前级/维持泵"的键永不充当主抽速**
+     （前级泵是另一台泵）。区间看**上界**（泵能覆盖即满足）；换算后确证不满足才排除；
+   - `ultimate_vacuum_max`：仅 `极限真空`/`ultimate_vacuum` 类键参与（`适用真空度`/
+     `真空度范围`/`工作真空` 是工作区间，**不得**冒充极限真空）；取可达最好值（区间下界、
+     `≤X` 取 X）与 max 比较；换算后确证不满足才排除；
+   - `oil_free=true`：params `无油=是`，或"产品类型/标题/正文"命中无油词面
+     （`无油(?!润滑)|干式|干泵`——**"无油润滑轴承"是部件描述，不是无油泵**）。
+4. **缺参语义双路径（QA-0033，有意不同）**：
+   - 产品匹配路径（`match_products`，spec_flow 硬列表）：关键参数取不到 → **排除**
+     （面向用户的匹配清单宁缺勿滥）；
+   - 知识块过滤路径（`chunk_matches_spec`，检索召回）：取不到 → **不可判定、放行**
+     （缺参数的知识块/非产品块绝不因过滤被团灭，回落保护兜底）。
+5. **回落保护（强制）与透明化（QA-0031）**：过滤只作用于融合后的召回池；若过滤后候选数
+   < top_k，**整体回落未过滤结果**——宁可放宽不可答空。是否真应用了过滤（`spec_applied`）、
+   过滤前后池子大小（`spec_pool_before/after`）必须落结构化日志；回落高频出现即过滤
+   条件过严的告警信号。
+6. **调用方**：respond 节点 knowledge_flow 从 understanding.entities 派生 SpecCriteria
    （is_empty 则不过滤），随 `context_for(message, spec=…)` 下传。
 
 ### 6.5 输出侧过滤

@@ -47,17 +47,24 @@ class RAGPipeline:
             fused = rrf_fuse([s.chunk for s in candidates], [s.chunk for s in keyword_hits], top_k=RECALL_TOP_K)
         else:
             fused = [s.chunk for s in candidates]
+        spec_applied = False
+        spec_pool_before = len(fused)
         if spec is not None and not spec.is_empty:
             filtered = [c for c in fused if chunk_matches_spec(c, spec)]
             # §6.4.1 回落保护：过滤后候选不足则整体回落未过滤结果——宁可放宽不可答空
             if len(filtered) >= min(top_k, len(fused)) and filtered:
                 fused = filtered
+                spec_applied = True
+            # QA-0031：回落必须可见——是否真应用了过滤、过滤前后池子多大，全部落日志
         logger.info(
             "rag.retrieve",
             query_len=len(query),
             recall=len(candidates),
             hybrid=self._hybrid,
-            spec=bool(spec is not None and not spec.is_empty),
+            spec_requested=bool(spec is not None and not spec.is_empty),
+            spec_applied=spec_applied,
+            spec_pool_before=spec_pool_before,
+            spec_pool_after=len(fused),
             trust=[c.trust_level for c in fused[:5]],
         )
         ranked = self._reranker.rerank(query, fused)

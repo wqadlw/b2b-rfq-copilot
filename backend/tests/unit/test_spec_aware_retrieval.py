@@ -35,10 +35,10 @@ from rfq_copilot.ports.knowledge_source import KnowledgeDocument  # noqa: E402
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "site"
 
 
-def _chunk(params: dict[str, str] | None, content: str = "产品正文") -> Any:
+def _chunk(params: dict[str, str] | None, content: str = "产品正文", title: str = "产品") -> Any:
     from rfq_copilot.core.rag.chunking import Chunk
 
-    return Chunk(doc_id="d", chunk_index=0, title="产品", content=content, trust_level="merchant", params=params)
+    return Chunk(doc_id="d", chunk_index=0, title=title, content=content, trust_level="merchant", params=params)
 
 
 # ---------------------------------------------------------------------------
@@ -78,12 +78,33 @@ def test_export_products_carry_params() -> None:
 
 
 def test_chunk_matches_spec_pumping_speed() -> None:
-    criteria = SpecCriteria(pumping_speed_min=100.0)
-    assert chunk_matches_spec(_chunk({"抽速": "120 L/s"}), criteria) is True
-    assert chunk_matches_spec(_chunk({"抽速": "65 L/s"}), criteria) is False
+    # 单位契约（QA-0030）：criteria 基准单位 m³/h，参数值带单位换算后比较
+    criteria = SpecCriteria(pumping_speed_min=300.0)
+    assert chunk_matches_spec(_chunk({"抽速": "120 L/s"}), criteria) is True  # 120 L/s = 432 m³/h
+    assert chunk_matches_spec(_chunk({"抽速": "65 L/s"}), criteria) is False  # 234 m³/h < 300
+    # 区间看上界：100-1000 m³/h 能覆盖 ≥300
+    assert chunk_matches_spec(_chunk({"抽气速率范围": "100-1000 m³/h"}), criteria) is True
+    assert chunk_matches_spec(_chunk({"抽气速率范围": "10-50 m³/h"}), criteria) is False
+    # 前级泵抽速是另一台泵的抽速，绝不能当主抽速判满足——600 不参与比较，
+    # 主抽速取不到 → 不可判定放行（§6.4.1 缺参语义）
+    assert chunk_matches_spec(_chunk({"前级泵抽速": "600 m³/h"}), criteria) is True
     # 缺参数 → 不可判定，不排除（回落保护由 pipeline 层负责）
     assert chunk_matches_spec(_chunk(None), criteria) is True
     assert chunk_matches_spec(_chunk({"功率": "1.5kW"}), criteria) is True
+
+
+def test_chunk_matches_spec_vacuum_units_and_aliases() -> None:
+    vac = SpecCriteria(ultimate_vacuum_max=0.5)
+    # 科学计数 + 上标：5×10⁻⁴ Pa = 0.0005 Pa ≤ 0.5
+    assert chunk_matches_spec(_chunk({"极限真空": "≤5×10⁻⁴ Pa"}), vac) is True
+    # 单位换算：0.08 hPa = 8 Pa > 0.5，必须排除（假阳性是 QA-0030 最危险方向）
+    assert chunk_matches_spec(_chunk({"极限真空": "≤0.08 hPa"}), vac) is False
+    assert chunk_matches_spec(_chunk({"极限真空": "≤120 mbar"}), vac) is False  # 12000 Pa
+    # 区间取可达最好值（下界）：大气压 ~ 1×10⁻⁸ Pa 的最好值是 1×10⁻⁸
+    assert chunk_matches_spec(_chunk({"极限真空": "大气压 ~ 1×10⁻⁸ Pa"}), vac) is True
+    # 适用真空度/工作真空是"工作区间"，不是极限真空——不得参与判定
+    assert chunk_matches_spec(_chunk({"适用真空度": "5 Pa"}), vac) is True
+    assert chunk_matches_spec(_chunk(None), vac) is True
 
 
 def test_chunk_matches_spec_oil_free_and_vacuum() -> None:
@@ -91,6 +112,11 @@ def test_chunk_matches_spec_oil_free_and_vacuum() -> None:
     assert chunk_matches_spec(_chunk({"无油": "是"}), oil) is True
     assert chunk_matches_spec(_chunk(None, content="无油螺杆泵工作原理"), oil) is True
     assert chunk_matches_spec(_chunk(None, content="旋片泵油润滑结构"), oil) is False
+    # '无油润滑轴承' 是部件描述，不是无油泵（QA-0030 ⑤）
+    assert chunk_matches_spec(_chunk({"结构特点": "无油润滑轴承"}), oil) is False
+    # 产品类型词面：无油旋片/干式螺杆
+    assert chunk_matches_spec(_chunk({"产品类型": "无油旋片真空泵"}), oil) is True
+    assert chunk_matches_spec(_chunk(None, title="鲍斯 GSD 250 干式螺杆真空泵"), oil) is True
     vac = SpecCriteria(ultimate_vacuum_max=0.001)
     assert chunk_matches_spec(_chunk({"极限真空": "0.0005 Pa"}), vac) is True
     assert chunk_matches_spec(_chunk({"极限真空": "0.01 Pa"}), vac) is False
