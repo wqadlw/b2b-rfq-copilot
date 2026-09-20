@@ -639,6 +639,30 @@ def create_app() -> FastAPI:
         rt.store.append_message(session_id, "system", "本次服务已结束，感谢您的咨询。")
         return {"session_id": session_id, "status": "closed"}
 
+    @app.post("/api/v1/sessions/{session_id}/handoff-request")
+    async def handoff_request(session_id: str) -> dict[str, Any]:
+        """用户侧转人工（CS-1 配套，03-api-spec §4.5）：session_id 即凭证，幂等。
+
+        bot_serving → handoff_pending + 系统消息；已在人工流程 → 幂等 200；
+        closed → 409。无 LLM 成本，幂等即防滥用，不设额外限流。
+        """
+        rt = get_runtime()
+        state = rt.store.find(session_id)
+        if state is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "SESSION_NOT_FOUND", "message": "会话不存在"},
+            )
+        if state.status == "closed":
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "SESSION_CLOSED", "message": "会话已结束"},
+            )
+        if state.status == "bot_serving":
+            rt.store.set_status(session_id, "handoff_pending")
+            rt.store.append_message(session_id, "system", "已收到人工服务请求，工程师会尽快接入。")
+        return {"session_id": session_id, "status": rt.store.status(session_id)}
+
     # ---- CS-faq：运营自助 FAQ 管理（chatwoot canned-response 思想，全部内部 token 门） ----
 
     @app.get("/api/v1/faq")

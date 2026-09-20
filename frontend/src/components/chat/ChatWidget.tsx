@@ -24,7 +24,7 @@ import type { EntityCardData } from "../../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { toEntityCard } from "../../lib/cardMapper";
-import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
+import { createSession, fetchUiConfig, requestHandoff, sendFeedback, streamChat } from "../../lib/api";
 import { cn } from "../../lib/utils";
 import { createInquiryCardState, inquiryReducer } from "../../lib/inquiryReducer";
 import type { ChatMessage, UiConfig } from "../../lib/types";
@@ -93,6 +93,8 @@ export function ChatWidget({
   const abortRef = useRef<AbortController | null>(null);
   const lastUserMessage = useRef<string>("");
   const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
+  // 用户侧转人工：点击即置位防重入（端点幂等兜底）；失败复位允许重试
+  const [handoffRequested, setHandoffRequested] = useState(false);
   // 生产态游客登录引导：用户可关闭（会话内不再出现）
   const [showLoginHint, setShowLoginHint] = useState(true);
   // 轮播占位语下标：4s 切换（busy 时暂停轮播，placeholder 固定"正在生成…"）
@@ -152,6 +154,30 @@ export function ChatWidget({
       localStorage.setItem("rfq-session-id", sessionId);
     }
   }, [messages, sessionId]);
+
+  // 用户侧转人工：幂等端点；成功落本地提示（human_serving 下用户消息本就绕过 LLM，
+  // 坐席回复经 reply 落库后用户下次发消息即见——与 CS-1 现有语义衔接）
+  const onHandoff = (): void => {
+    if (handoffRequested || sessionId === null) return;
+    setHandoffRequested(true);
+    requestHandoff(sessionId)
+      .then(() => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "已为你转接人工服务，工程师会尽快接入。你可以先留言，工程师上线后即可看到。",
+          },
+        ]);
+      })
+      .catch(() => {
+        setHandoffRequested(false);
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "转接暂时没有成功，请稍后再试，或扫码添加工程师微信。" },
+        ]);
+      });
+  };
 
   // 智能滚动：仅当用户停留在底部附近时跟随；用户上翻阅读时不打断
   useEffect(() => {
@@ -552,6 +578,18 @@ export function ChatWidget({
             </span>
           </div>
         )
+      )}
+      {/* 用户侧转人工入口：幂等端点，点击后隐藏（human_serving 下用户消息本就绕过 LLM） */}
+      {sessionId !== null && !handoffRequested && (
+        <div className="flex justify-end border-t border-line bg-surface px-3 py-1">
+          <button
+            type="button"
+            onClick={onHandoff}
+            className="text-xs text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
+          >
+            转人工
+          </button>
+        </div>
       )}
       {/* Input：容器式 composer（企业级契约：容器承担边框+焦点态，按钮排容器内部不压字；busy 同槽变停止钮） */}
       <form onSubmit={onSubmit} className="border-t border-line bg-surface p-3">
