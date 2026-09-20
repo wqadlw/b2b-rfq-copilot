@@ -111,7 +111,7 @@
 
 ## 4.5 坐席接管（CS-1，全部需 X-Internal-Token）
 
-会话状态机：`bot_serving`（AI 服务中）→ `handoff_pending`（待人工接管，handoff 路由触发）→ `human_serving`（人工服务中）→ `closed`（已结束）。状态存于 SessionStore，随会话生命周期存在。
+会话状态机：`bot_serving`（AI 服务中）→ `handoff_pending`（待人工接管，handoff 路由或**用户侧转人工**触发）→ `human_serving`（人工服务中）→ `closed`（已结束）。状态存于 SessionStore，随会话生命周期存在。
 
 | 端点 | 说明 |
 |---|---|
@@ -119,6 +119,7 @@
 | `POST /api/v1/agent/sessions/{id}/takeover` | 接管：→ `human_serving`，写入系统消息"坐席已接入"；会话不存在或已结束 → 404 |
 | `POST /api/v1/agent/sessions/{id}/reply` | 坐席回复：`{"content": "..."}`（≤2000 字符）直接落会话消息流（role=agent），**不进 LLM**；会话不在 `human_serving` → 409 NOT_HUMAN_SERVING；坏 JSON → 400 INVALID_JSON；空内容 → 400 MISSING_CONTENT |
 | `POST /api/v1/agent/sessions/{id}/close` | 结束：→ `closed`，写入系统消息"本次服务已结束"；不存在 → 404 |
+| `POST /api/v1/sessions/{id}/handoff-request` | **用户侧转人工（公开，session_id 即凭证，与询盘状态查询同信任级）**：`bot_serving` → `handoff_pending` 并落系统消息；`handoff_pending`/`human_serving` → 幂等 200（不重复落消息）；`closed` → 409 SESSION_CLOSED；不存在 → 404。无 LLM 成本，幂等即防滥用，不设额外限流 |
 
 **human_serving 绕过语义**：会话处于 `human_serving` 时，用户经 `POST /chat/stream` 发送的消息**绕过 LLM 图（0 token）**：用户消息照常落库，SSE 返回 `status`（人工服务中）+ 最后一条坐席回复的 `answer_delta` + `done(finish_reason="human_serving")`。坐席消息经 reply 落库后，用户下次轮询/发消息即见。
 

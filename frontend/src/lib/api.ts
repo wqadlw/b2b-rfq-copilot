@@ -90,3 +90,18 @@ export async function sendFeedback(
     body: JSON.stringify({ session_id: sessionId, message_id: messageId, feedback }),
   });
 }
+
+/**
+ * 用户侧转人工（03-api-spec §4.5）：session_id 即凭证；幂等（已在人工流程返回当前态）。
+ * closed → 409 由调用方按失败处理。返回终态供 UI 判断。
+ */
+export async function requestHandoff(
+  sessionId: string,
+): Promise<"handoff_pending" | "human_serving"> {
+  const res = await fetch(`${endpoint()}/api/v1/sessions/${sessionId}/handoff-request`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`handoff ${res.status}`);
+  const data = (await res.json()) as { status: string };
+  return data.status === "human_serving" ? "human_serving" : "handoff_pending";
+}
