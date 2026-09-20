@@ -219,13 +219,27 @@ def main() -> int:
     lines = [f"# 测评报告 {stamp}（{mode}）", "", "| 族 | 用例 | 通过 | 通过率 |", "|---|---|---|---|"]
     for family in sorted(FAMILIES):
         total = tally.get(family, 0)
-        passed = tally.get(f"{family}_pass", total if not args.live else 0)
-        rate = f"{passed / total:.0%}" if total else "—"
-        lines.append(f"| {family} | {total} | {passed} | {rate} |")
+        if args.live:
+            passed = tally.get(f"{family}_pass", 0)
+            rate = f"{passed / total:.0%}" if total else "—"
+        else:
+            # 诚实口径（06-eval-spec §6.2）：baseline 只实机执行派生 B 族，
+            # 其余族未执行——不得记满分，必须如实标注。
+            executed = family == "B"
+            passed = tally.get(f"{family}_pass", 0) if executed else None
+            rate = f"{passed / total:.0%}" if executed and total else ("未执行" if total else "—")
+        lines.append(f"| {family} | {total} | {passed if passed is not None else '—'} | {rate} |")
     if not args.live:
-        lines += ["", f"> B 族派生用例 {len(derive_b_cases())} 条（已实机执行，见上方 B 行）。"]
-    if failures:
-        lines += ["", "## 失败明细", *(f"- {f}" for f in failures)]
+        b_total = len(derive_b_cases())
+        b_pass = tally.get("B_pass", 0)
+        lines += [
+            "",
+            f"> B 族派生用例 {b_total} 条（已实机执行，见上方 B 行）；"
+            "A/C/D 未在 baseline 执行——投毒/权限/通用回归由 CI 评测门（pytest eval）"
+            "与 `--live` 人工执行覆盖（06-eval-spec §6.1/§6.2）。",
+        ]
+        if b_pass < b_total:
+            lines += ["", "## 失败明细", f"- baseline B 族 {b_pass}/{b_total} 通过（exit 1）"]
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     (REPORTS_DIR / f"{stamp}_{mode}.json").write_text(
         json.dumps(
@@ -237,7 +251,11 @@ def main() -> int:
     )
     print(f"mode={mode} tally={dict(tally)} failures={len(failures)}")
     print(f"report: {report_path.relative_to(ROOT)}")
-    return 1 if args.live and failures else 0
+    if args.live:
+        return 1 if failures else 0
+    # baseline 诚实口径（06-eval-spec §6.2）：派生 B 族实机执行存在失败即非 0
+    b_total = len(derive_b_cases())
+    return 1 if tally.get("B_pass", 0) < b_total else 0
 
 
 if __name__ == "__main__":

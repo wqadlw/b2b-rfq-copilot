@@ -51,6 +51,19 @@ jobs:
       - run: uv sync --extra dev
       - run: uv run lint-imports
 
+  backend-eval-baseline:
+    name: backend · eval baseline (B family)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev
+      # 确定性派生 B 族实机执行，零 token；B 失败即 exit 1（06-eval-spec §6.2）。
+      # 投毒/权限回归由 pytest 评测门（test_eval_gate，C 族全量 ci 标记）覆盖。
+      - run: uv run python scripts/run_eval.py
+
   frontend:
     name: frontend · lint + test + build
     runs-on: ubuntu-latest
