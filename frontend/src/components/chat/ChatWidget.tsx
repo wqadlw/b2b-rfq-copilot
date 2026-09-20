@@ -24,7 +24,7 @@ import type { EntityCardData } from "../../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { toEntityCard } from "../../lib/cardMapper";
-import { createSession, fetchUiConfig, requestHandoff, sendFeedback, streamChat } from "../../lib/api";
+import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
 import { cn, prefillFromEvent } from "../../lib/utils";
 import { createInquiryCardState, inquiryReducer } from "../../lib/inquiryReducer";
 import type { ChatMessage, UiConfig } from "../../lib/types";
@@ -93,8 +93,8 @@ export function ChatWidget({
   const abortRef = useRef<AbortController | null>(null);
   const lastUserMessage = useRef<string>("");
   const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
-  // 用户侧转人工：点击即置位防重入（端点幂等兜底）；失败复位允许重试
-  const [handoffRequested, setHandoffRequested] = useState(false);
+  // 转人工 = 微信工程师二维码弹层（微信一对一即人工主路径；CS-1.5 manifest 二维码配置贯通）
+  const [showWechatModal, setShowWechatModal] = useState(false);
   // 生产态游客登录引导：用户可关闭（会话内不再出现）
   const [showLoginHint, setShowLoginHint] = useState(true);
   // 轮播占位语下标：4s 切换（busy 时暂停轮播，placeholder 固定"正在生成…"）
@@ -167,30 +167,6 @@ export function ChatWidget({
     return () => window.removeEventListener("rfq:prefill", onPrefill);
   }, []);
 
-  // 用户侧转人工：幂等端点；成功落本地提示（human_serving 下用户消息本就绕过 LLM，
-  // 坐席回复经 reply 落库后用户下次发消息即见——与 CS-1 现有语义衔接）
-  const onHandoff = (): void => {
-    if (handoffRequested || sessionId === null) return;
-    setHandoffRequested(true);
-    requestHandoff(sessionId)
-      .then(() => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: "已为你转接人工服务，工程师会尽快接入。你可以先留言，工程师上线后即可看到。",
-          },
-        ]);
-      })
-      .catch(() => {
-        setHandoffRequested(false);
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "转接暂时没有成功，请稍后再试，或扫码添加工程师微信。" },
-        ]);
-      });
-  };
-
   // 智能滚动：仅当用户停留在底部附近时跟随；用户上翻阅读时不打断
   useEffect(() => {
     const el = listRef.current;
@@ -249,6 +225,12 @@ export function ChatWidget({
   ): Promise<void> => {
     if (busy || (!message && !action)) return;
     setBusy(true);
+    // 真实互动标记：供站点主动触达判断"24h 内已聊过则不打扰"（老访客仍可被再触达）
+    try {
+      localStorage.setItem("rfq-chat-activity", String(Date.now()));
+    } catch {
+      /* 隐私模式下静默跳过 */
+    }
     // 自愈：会话创建失败（如引擎重启期间加载的页面）时，发送前自动重建会话
     let sid = sessionId;
     if (sid === null) {
@@ -383,21 +365,47 @@ export function ChatWidget({
 
   return (
     <div className="flex h-screen max-w-2xl flex-col">
-      {/* Header：状态点 + 标题 + 能力徽章 */}
-      <header className="flex items-center justify-between border-b border-line bg-surface px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
-          </span>
-          <div>
-            <h1 className="text-base font-semibold leading-tight">{config?.display_name ?? "询盘助手"}</h1>
-            {/* 免责声明常驻 header 副标题：合规要求 AI 生成标识始终可见，且不占 composer 高度 */}
-            <p className="text-[11px] leading-tight text-ink-muted">内容由 AI 生成 · 价格与货期以供应商确认为准</p>
+      {/* 转人工弹层：微信二维码（manifest chat.wechat 配置贯通 ui-config） */}
+      {showWechatModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowWechatModal(false)}
+          role="dialog"
+          aria-label="转人工——添加工程师微信"
+        >
+          <div
+            className="w-full max-w-[300px] rounded-xl border border-border bg-surface p-4 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-ink-primary">扫码添加工程师微信</p>
+            <p className="mt-0.5 text-xs text-ink-secondary">一对一快速响应 · 手机随时回 · 无需等待</p>
+            {config?.chat?.wechat?.qrcode_url ? (
+              <img
+                src={config.chat.wechat.qrcode_url}
+                alt={`工程师微信二维码：${config.chat.wechat.contact_name ?? "专属工程师"}`}
+                className="mx-auto mt-3 h-44 w-44 rounded-lg border border-border"
+              />
+            ) : (
+              <div className="mx-auto mt-3 flex h-44 w-44 items-center justify-center rounded-lg border border-dashed border-border text-xs text-ink-muted">
+                二维码暂未配置
+              </div>
+            )}
+            <p className="mt-3 text-xs font-medium text-ink-primary">
+              {config?.chat?.wechat?.contact_name ?? "找真空工程师"}
+            </p>
+            <p className="mt-0.5 text-[11px] text-ink-muted">
+              {config?.chat?.wechat?.guidance_text ?? "添加后备注来意，工程师尽快通过"}
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowWechatModal(false)}
+              className="mt-3 w-full rounded-lg border border-line py-1.5 text-xs text-ink-secondary transition-colors hover:border-primary hover:text-primary"
+            >
+              关闭
+            </button>
           </div>
         </div>
-
-      </header>
+      )}
 
       {/* Messages */}
       <div
@@ -406,6 +414,28 @@ export function ChatWidget({
         aria-live="polite"
         className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4"
       >
+        {/* Header（随消息滚动，非悬浮固定）：状态点 + 标题 + 免责声明 + 转人工 */}
+        <header className="-mx-4 -mt-4 mb-4 flex items-center justify-between border-b border-line bg-surface px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
+            </span>
+            <div>
+              <h1 className="text-base font-semibold leading-tight">{config?.display_name ?? "询盘助手"}</h1>
+              {/* 免责声明：AI 生成标识（随内容滚动） */}
+              <p className="text-[11px] leading-tight text-ink-muted">内容由 AI 生成 · 价格与货期以供应商确认为准</p>
+            </div>
+          </div>
+          {/* 转人工入口：点击弹微信工程师二维码（CS-1.5 微信一对一主路径） */}
+          <button
+            type="button"
+            onClick={() => setShowWechatModal(true)}
+            className="shrink-0 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-medium text-orange-600 transition-colors hover:border-orange-300 hover:bg-orange-100"
+          >
+            转人工
+          </button>
+        </header>
         {empty && (
           <div className="flex flex-col items-center gap-3 pt-10 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-light">
@@ -591,21 +621,9 @@ export function ChatWidget({
           </div>
         )
       )}
-      {/* 用户侧转人工入口：幂等端点，点击后隐藏（human_serving 下用户消息本就绕过 LLM） */}
-      {sessionId !== null && !handoffRequested && (
-        <div className="flex justify-end border-t border-line bg-surface px-3 py-1">
-          <button
-            type="button"
-            onClick={onHandoff}
-            className="text-xs text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
-          >
-            转人工
-          </button>
-        </div>
-      )}
       {/* Input：容器式 composer（企业级契约：容器承担边框+焦点态，按钮排容器内部不压字；busy 同槽变停止钮） */}
-      <form onSubmit={onSubmit} className="border-t border-line bg-surface p-3">
-        <div className="flex items-end gap-1.5 rounded-xl border border-line bg-surface p-1.5 pl-2 transition-colors focus-within:border-primary focus-within:shadow-sm">
+      <form onSubmit={onSubmit} className="border-t border-line bg-surface py-2 px-3">
+        <div className="flex items-end gap-1.5 rounded-xl border border-line bg-surface p-1 pl-2 transition-colors focus-within:border-primary focus-within:shadow-sm">
           <textarea
             ref={inputRef}
             value={input}
@@ -613,29 +631,29 @@ export function ChatWidget({
             onChange={(event) => {
               setInput(event.target.value);
               event.target.style.height = "auto";
-              event.target.style.height = `${Math.min(event.target.scrollHeight, 120)}px`;
+              event.target.style.height = `${Math.min(event.target.scrollHeight, 96)}px`;
             }}
             onKeyDown={onKeyDown}
             placeholder={busy ? "正在生成…" : PLACEHOLDER_ROTATIONS[phIndex]}
-            className="min-h-9 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm leading-5 text-ink placeholder:text-ink-muted focus:outline-none"
+            className="min-h-7 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-ink placeholder:text-ink-muted focus:outline-none"
           />
           {busy ? (
             <button
               type="button"
               onClick={stop}
               aria-label="停止生成"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-white transition-transform active:scale-90"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-white transition-transform active:scale-90"
             >
-              <Square className="h-3.5 w-3.5" />
+              <Square className="h-3 w-3" />
             </button>
           ) : (
             <button
               type="submit"
               disabled={!input.trim()}
               aria-label="发送"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-all hover:bg-primary-hover active:scale-95 disabled:bg-line disabled:text-ink-muted"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-all hover:bg-primary-hover active:scale-95 disabled:bg-line disabled:text-ink-muted"
             >
-              <ArrowUp className="h-4 w-4" />
+              <ArrowUp className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
