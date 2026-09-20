@@ -46,6 +46,8 @@ class Runtime:
     checkpointer_conn: Any = None  # sqlite 连接句柄（shutdown 时关闭）
     # 08-knowledge-export-spec §4：离线知识模式下的语料新鲜度（demo 数据为 None）
     corpus_freshness: "CorpusFreshness | None" = None
+    # 08-knowledge-export-spec §6.4：最近一轮兜底刷新结果（落 /health；未启用为 None）
+    last_refresh: dict[str, Any] | None = None
 
 
 def _adapter_module(adapter: str) -> Any:

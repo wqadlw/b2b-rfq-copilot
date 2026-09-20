@@ -67,3 +67,5 @@ class HealthResponse(BaseModel):
     # 08-knowledge-export-spec §5：语料新鲜度（离线知识模式携带；demo 模式缺省）
     corpus_age_days: float | None = None
     corpus_stale: bool = False
+    # 08-knowledge-export-spec §6.4：最近一轮兜底刷新结果（未启用为 None）
+    knowledge_refresh: dict[str, Any] | None = None

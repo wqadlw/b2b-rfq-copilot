@@ -5,34 +5,25 @@
         --source-dir <站点>/database/seeders \
         [--live-dir .ai/private/rag_data]
 
-流程：
-1. 全量导出到临时目录 `.ai/private/rag_data_refresh`（带 --diff-from 对比现网目录）；
-2. diff（added/removed/changed）全零 → 丢弃临时目录，报 "unchanged"；
-3. 有变化 → 用新 knowledge.json / export_manifest.json / etl_filtered.log 原子替换现网目录，
-   打印差异摘要与保鲜提示。
+实现为 app/knowledge_refresh.run_refresh 的薄壳（08-spec §6.5 单一实现）。
+引擎内置调度（KNOWLEDGE_REFRESH_ENABLED）与本 CLI 共用同一核心；CLI 供人工立即触发。
+替换后引擎**无需重启**——调度器/下次刷新会热加载；手工替换后如需立即可见，
+调用方自行重启或等待引擎下一轮热加载（§6.3）。
 
-注意：替换后引擎需重启才加载新快照；运行期间的实时增量由站点 webhook（POST /api/v1/knowledge）
-覆盖，本脚本是防事件丢失的兜底通道。cases/solutions/search_meta 走独立通道，不在本脚本范围。
+注意：运行期间的实时增量由站点 webhook（POST /api/v1/knowledge）覆盖，本通道是防事件
+丢失的兜底。cases/solutions/search_meta 走独立通道，不在本脚本范围。
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import json
-import shutil
 import sys
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_SCRIPT = _REPO_ROOT / "scripts" / "vacuum_b2b_export.py"
-_spec = importlib.util.spec_from_file_location("vacuum_b2b_export", _SCRIPT)
-assert _spec is not None and _spec.loader is not None
-export_mod = importlib.util.module_from_spec(_spec)
-sys.modules["vacuum_b2b_export"] = export_mod
-_spec.loader.exec_module(export_mod)
+sys.path.insert(0, str(_REPO_ROOT / "backend" / "src"))
 
-_REFRESH_FILES = ("knowledge.json", "export_manifest.json", "etl_filtered.log")
+from rfq_copilot.app.knowledge_refresh import run_refresh  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,47 +32,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live-dir", default=".ai/private/rag_data", help="现网知识数据目录")
     args = parser.parse_args(argv)
 
-    live_dir = Path(args.live_dir).resolve()
-    if not (live_dir / "knowledge.json").is_file():
-        print(f"拒绝：现网目录缺少 knowledge.json：{live_dir}", file=sys.stderr)
+    try:
+        result = run_refresh(args.source_dir, args.live_dir)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"刷新中止：{exc}", file=sys.stderr)
         return 2
-    refresh_dir = live_dir.parent / f"{live_dir.name}_refresh"
-    if refresh_dir.exists():
-        shutil.rmtree(refresh_dir)
 
-    rc = export_mod.main(
-        [
-            "--source-dir",
-            args.source_dir,
-            "--output-dir",
-            str(refresh_dir),
-            "--diff-from",
-            str(live_dir),
-        ]
-    )
-    if rc != 0:
-        print("导出失败，现网数据保持不变。", file=sys.stderr)
-        return rc
-
-    report_path = refresh_dir / "diff_report.json"
-    report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
-    added = report.get("added", {"count": 0, "samples": []})
-    removed = report.get("removed", {"count": 0, "samples": []})
-    changed = report.get("changed", {"count": 0, "samples": []})
-    if not (added["count"] or removed["count"] or changed["count"]):
-        shutil.rmtree(refresh_dir)
+    if not result.refreshed:
         print("unchanged：语料与现网一致，无需更新。")
         return 0
-
-    for name in _REFRESH_FILES:
-        src = refresh_dir / name
-        if src.is_file():
-            shutil.copy2(src, live_dir / name)
-    shutil.rmtree(refresh_dir)
-    print(f"refreshed：added={added['count']} removed={removed['count']} changed={changed['count']} → {live_dir}")
-    for item in added["samples"][:5] + removed["samples"][:5] + changed["samples"][:5]:
+    print(
+        f"refreshed：added={len(result.added)} removed={len(result.removed)} "
+        f"changed={len(result.changed)} → {Path(args.live_dir).resolve()}"
+    )
+    for item in (result.added + result.removed + result.changed)[:15]:
         print(f"  - {item}")
-    print("提示：引擎重启后加载新快照；运行期实时增量由 webhook 覆盖。")
+    print("提示：引擎内置调度会在下一轮热加载；未启用调度时需重启引擎加载新快照。")
     return 0
 
 

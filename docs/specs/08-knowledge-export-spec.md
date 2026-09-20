@@ -1,8 +1,9 @@
 # 08 · KNOWLEDGE EXPORT SPEC · 知识导出契约
 
-> 密级：公开 · 版本 v1.0 · 2026-09-19 · 上位文档：`01-port-spec.md`（信任分级 §6）。
+> 密级：公开 · 版本 v1.1 · 2026-09-20 · 上位文档：`01-port-spec.md`（信任分级 §6）。
 > 本文定义"站点 seeder → 知识快照"导出产物的机器可读契约：清单（manifest）、内容哈希、差异报告与新鲜度语义。
 > 动机（2026-09-19 知识管道研究）：数据停更是无声失败——必须有哈希（增量 diff）、时间戳（保鲜指标）、阈值（过期告警）。
+> v1.1 变更：新增 §6 引擎内置每日兜底刷新（热加载免重启）；验收标准顺移 §7。
 
 ## 1. 导出产物清单（export manifest）
 
@@ -71,9 +72,51 @@ content_hash = sha256( f"{doc_id}\n{title}\n{doc_type}\n{trust_level}\n{content}
   "corpus_age_days": 0.5, "corpus_stale": false }
 ```
 
-## 6. 验收标准
+## 6. 引擎内置每日兜底刷新（2026-09-20 新增，热加载免重启）
+
+数据停更是无声失败；webhook 覆盖运行期实时增量，本节定义**防事件丢失的定时兜底通道**。
+
+### 6.1 触发与门禁
+
+| 设置 | 默认 | 语义 |
+|---|---|---|
+| `KNOWLEDGE_REFRESH_ENABLED` | `false` | 总开关（显式 opt-in；测试/CI 不启用） |
+| `KNOWLEDGE_SOURCE_DIR` | 空 | 站点 `database/seeders` 目录；**缺失则禁用并 WARN**（半配置不静默、不崩溃） |
+| `KNOWLEDGE_REFRESH_INTERVAL_HOURS` | `24` | 刷新间隔；启动后 60s 宽限先跑一轮（兜住停机期间的变化），此后按间隔循环 |
+
+### 6.2 流程（复用 §1~§3 契约，单事实源）
+
+1. 重导出到临时目录（`--diff-from` 现网目录）；
+2. `diff_manifests(old_manifest, new_manifest)` 取 **doc_id 全量**三类差异（不走 samples 截断）；
+3. 无变化 → 丢弃临时目录，报 unchanged；有变化 → 原子替换现网目录三件套
+   （knowledge.json / export_manifest.json / etl_filtered.log）。
+
+### 6.3 热加载（免重启，对齐 webhook 同一族替换语义）
+
+- **RAG store 差量补丁**：removed/changed → `remove_doc(doc_id)`（家族语义，QA-0002 立的
+  替换规矩）；added/changed → `chunk_document` + `ingest`。与 POST /api/v1/knowledge 走同一条
+  remove→ingest 路径，不得另造第二套语义。
+- **离线端口重建**：`OfflineProductCatalog`/`OfflineSupplierDirectory`/`OfflineCaseDirectory`/
+  `OfflineSolutionDirectory` 构造时一次性装载——刷新后必须重建并热换
+  `deps.catalog/suppliers/cases/solutions`（GraphDeps 节点每次调用读取字段，热换安全）。
+- **freshness 重算**：`corpus_freshness` 按新 manifest 重新加载。
+
+### 6.4 可观测
+
+- `runtime.last_refresh` 落 `/api/v1/health` 的 `knowledge_refresh` 字段（向后兼容，缺省 None）：
+  `{enabled, last_run_at, refreshed, added, removed, changed, error}`。
+- 任何一轮失败：结构化 WARN + 计入 last_refresh.error，**循环继续**（下一轮自愈）。
+
+### 6.5 CLI 手工通道
+
+`scripts/daily_knowledge_refresh.py` 保留为人工触发入口，实现为 §6.2 核心的薄壳（共用单一实现）。
+
+## 7. 验收标准
 
 1. 两次导出同一未变数据源：manifest 中全部 content_hash 相同（幂等）。
 2. 单条源数据变化 → diff 恰好报 1 条 changed；新增/删除同理。
 3. freshness 三条路径（manifest / mtime / missing）均有单元测试；stale 边界（==阈值不告警，>阈值告警）有测试。
 4. health 在离线数据模式下携带语料字段，demo 模式不携带。
+5. 刷新核心（§6.2）：无变化轮不触碰现网目录（幂等）；有变化轮 diff 恰好覆盖全部 doc_id。
+6. 热加载（§6.3）：刷新后**无需重启**——检索立即可见新增/变更文档、已删文档不再命中；离线端口数据同步更新。
+7. 门禁（§6.1）：开关关闭 / 源目录缺失时调度器不启动；一轮异常不影响后续轮次。
