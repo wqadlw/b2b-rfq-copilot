@@ -24,7 +24,7 @@ import type { EntityCardData } from "../../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { toEntityCard } from "../../lib/cardMapper";
-import { createSession, fetchUiConfig, requestHandoff, sendFeedback, streamChat } from "../../lib/api";
+import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
 import { cn, prefillFromEvent } from "../../lib/utils";
 import { createInquiryCardState, inquiryReducer } from "../../lib/inquiryReducer";
 import type { ChatMessage, UiConfig } from "../../lib/types";
@@ -93,8 +93,8 @@ export function ChatWidget({
   const abortRef = useRef<AbortController | null>(null);
   const lastUserMessage = useRef<string>("");
   const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
-  // 用户侧转人工：点击即置位防重入（端点幂等兜底）；失败复位允许重试
-  const [handoffRequested, setHandoffRequested] = useState(false);
+  // 转人工 = 微信工程师二维码弹层（微信一对一即人工主路径；CS-1.5 manifest 二维码配置贯通）
+  const [showWechatModal, setShowWechatModal] = useState(false);
   // 生产态游客登录引导：用户可关闭（会话内不再出现）
   const [showLoginHint, setShowLoginHint] = useState(true);
   // 轮播占位语下标：4s 切换（busy 时暂停轮播，placeholder 固定"正在生成…"）
@@ -166,30 +166,6 @@ export function ChatWidget({
     window.addEventListener("rfq:prefill", onPrefill);
     return () => window.removeEventListener("rfq:prefill", onPrefill);
   }, []);
-
-  // 用户侧转人工：幂等端点；成功落本地提示（human_serving 下用户消息本就绕过 LLM，
-  // 坐席回复经 reply 落库后用户下次发消息即见——与 CS-1 现有语义衔接）
-  const onHandoff = (): void => {
-    if (handoffRequested || sessionId === null) return;
-    setHandoffRequested(true);
-    requestHandoff(sessionId)
-      .then(() => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: "已为你转接人工服务，工程师会尽快接入。你可以先留言，工程师上线后即可看到。",
-          },
-        ]);
-      })
-      .catch(() => {
-        setHandoffRequested(false);
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "转接暂时没有成功，请稍后再试，或扫码添加工程师微信。" },
-        ]);
-      });
-  };
 
   // 智能滚动：仅当用户停留在底部附近时跟随；用户上翻阅读时不打断
   useEffect(() => {
@@ -402,8 +378,57 @@ export function ChatWidget({
             <p className="text-[11px] leading-tight text-ink-muted">内容由 AI 生成 · 价格与货期以供应商确认为准</p>
           </div>
         </div>
-
+        {/* 转人工入口：右上角常驻，点击弹微信工程师二维码（CS-1.5 微信一对一主路径） */}
+        <button
+          type="button"
+          onClick={() => setShowWechatModal(true)}
+          className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-primary hover:text-primary"
+        >
+          转人工
+        </button>
       </header>
+
+      {/* 转人工弹层：微信二维码（manifest chat.wechat 配置贯通 ui-config） */}
+      {showWechatModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowWechatModal(false)}
+          role="dialog"
+          aria-label="转人工——添加工程师微信"
+        >
+          <div
+            className="w-full max-w-[300px] rounded-xl border border-border bg-surface p-4 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-ink-primary">扫码添加工程师微信</p>
+            <p className="mt-0.5 text-xs text-ink-secondary">一对一快速响应 · 手机随时回 · 无需等待</p>
+            {config?.chat?.wechat?.qrcode_url ? (
+              <img
+                src={config.chat.wechat.qrcode_url}
+                alt={`工程师微信二维码：${config.chat.wechat.contact_name ?? "专属工程师"}`}
+                className="mx-auto mt-3 h-44 w-44 rounded-lg border border-border"
+              />
+            ) : (
+              <div className="mx-auto mt-3 flex h-44 w-44 items-center justify-center rounded-lg border border-dashed border-border text-xs text-ink-muted">
+                二维码暂未配置
+              </div>
+            )}
+            <p className="mt-3 text-xs font-medium text-ink-primary">
+              {config?.chat?.wechat?.contact_name ?? "找真空工程师"}
+            </p>
+            <p className="mt-0.5 text-[11px] text-ink-muted">
+              {config?.chat?.wechat?.guidance_text ?? "添加后备注来意，工程师尽快通过"}
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowWechatModal(false)}
+              className="mt-3 w-full rounded-lg border border-line py-1.5 text-xs text-ink-secondary transition-colors hover:border-primary hover:text-primary"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div
@@ -596,18 +621,6 @@ export function ChatWidget({
             </span>
           </div>
         )
-      )}
-      {/* 用户侧转人工入口：幂等端点，点击后隐藏（human_serving 下用户消息本就绕过 LLM） */}
-      {sessionId !== null && !handoffRequested && (
-        <div className="flex justify-end border-t border-line bg-surface px-3 py-1">
-          <button
-            type="button"
-            onClick={onHandoff}
-            className="text-xs text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
-          >
-            转人工
-          </button>
-        </div>
       )}
       {/* Input：容器式 composer（企业级契约：容器承担边框+焦点态，按钮排容器内部不压字；busy 同槽变停止钮） */}
       <form onSubmit={onSubmit} className="border-t border-line bg-surface p-3">

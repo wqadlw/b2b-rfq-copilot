@@ -3,6 +3,13 @@ adapter: vacuum_b2b_sample
 display_name: "找真空 AI 采购助手"
 languages: [zh-CN]
 
+chat:
+  wechat:
+    # CS-1.5: demo placeholder — real QR belongs to the site-side private config (repo-policy)
+    qrcode_url: "/demo-assets/demo-wechat-qr.svg"
+    contact_name: "找真空工程师"
+    guidance_text: "扫码添加工程师微信，一对一快速响应"
+
 ports:
   product_catalog:
     enabled: true
