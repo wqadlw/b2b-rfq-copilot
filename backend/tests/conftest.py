@@ -20,7 +20,6 @@ from rfq_copilot.core.rag.reranker import NoopReranker
 from rfq_copilot.core.rag.store import InMemoryVectorStore
 
 ADAPTER_DIR = Path(__file__).resolve().parents[1] / "src" / "rfq_copilot" / "adapters" / "demo"
-POISONED = frozenset({"demo-kb-poison-001", "demo-kb-poison-002", "demo-kb-poison-003"})
 
 
 @pytest.fixture()
@@ -49,7 +48,6 @@ def make_deps(scripted: list[dict[str, Any]] | None = None, manifest: Manifest |
         rag=rag,
         inquiry_sink=ports.inquiry_sink,
         lead_distribution=ports.lead_distribution,
-        poisoned_ids=POISONED,
     )
     return deps, ports
 
