@@ -39,9 +39,7 @@ def test_handoff_request_bot_serving_transitions_and_system_message(client: Test
     assert r.status_code == 200
     assert r.json() == {"session_id": "hf-a", "status": "handoff_pending"}
     # 系统消息落库（坐席工作台可见上下文）
-    msgs = client.get(
-        "/api/v1/sessions/hf-a/messages", headers={"X-Internal-Token": TOKEN}
-    ).json()["messages"]
+    msgs = client.get("/api/v1/sessions/hf-a/messages", headers={"X-Internal-Token": TOKEN}).json()["messages"]
     assert any(m["role"] == "system" and "人工服务请求" in m["content"] for m in msgs)
 
 
@@ -49,9 +47,7 @@ def test_handoff_request_idempotent_no_duplicate_message(client: TestClient) -> 
     _make_session(client, "hf-b")
     assert client.post("/api/v1/sessions/hf-b/handoff-request").status_code == 200
     assert client.post("/api/v1/sessions/hf-b/handoff-request").status_code == 200
-    msgs = client.get(
-        "/api/v1/sessions/hf-b/messages", headers={"X-Internal-Token": TOKEN}
-    ).json()["messages"]
+    msgs = client.get("/api/v1/sessions/hf-b/messages", headers={"X-Internal-Token": TOKEN}).json()["messages"]
     assert sum(1 for m in msgs if m["role"] == "system" and "人工服务请求" in m["content"]) == 1
 
 

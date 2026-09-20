@@ -325,8 +325,7 @@ def _respond_node(deps: GraphDeps) -> Any:
                                 "price": price_text,
                                 "url": product.url,
                                 "specs": {
-                                    key: _humanize_spec_value(value)
-                                    for key, value in list(product.specs.items())[:3]
+                                    key: _humanize_spec_value(value) for key, value in list(product.specs.items())[:3]
                                 },
                             },
                         )
