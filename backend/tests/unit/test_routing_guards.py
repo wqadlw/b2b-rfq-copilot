@@ -44,6 +44,7 @@ def test_input_not_mutated() -> None:
     apply_routing_guards("旋片真空泵有哪些", original)
     assert original == snapshot
 
+
 # ---------------------------------------------------------------------------
 # ADR-0008 D1：选型问法护栏（selection_over_search）
 # ---------------------------------------------------------------------------

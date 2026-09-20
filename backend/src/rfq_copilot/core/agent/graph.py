@@ -480,9 +480,7 @@ def _respond_node(deps: GraphDeps) -> Any:
             # ADR-0008 D2：回答 LLM 注入最近 4 轮对话（每条截断 120 字符）——
             # 多轮指代（"它多少钱""第一个呢"）此前只进了意图提取，回答层完全失忆。
             answer_history = deps.store.messages(state["session_id"])[-9:-1]  # 去掉本轮 user 消息
-            history_text = "\n".join(
-                f"{m.get('role', '')}: {str(m.get('content', ''))[:120]}" for m in answer_history
-            )
+            history_text = "\n".join(f"{m.get('role', '')}: {str(m.get('content', ''))[:120]}" for m in answer_history)
             answer_user = (
                 (f"【对话历史（最近轮次）】\n{history_text}\n\n" if history_text.strip() else "")
                 + "【问题】"
