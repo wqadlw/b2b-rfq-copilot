@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { AlertCircle, ArrowUp, CheckCircle2, Loader2, Pencil, Sparkles, Square, X } from "lucide-react";
+import { AlertCircle, ArrowUp, CheckCircle2, ClipboardList, Headphones, Loader2, MessageSquarePlus, Pencil, Sparkles, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
 import {
@@ -184,6 +184,33 @@ export function ChatWidget({
     setInput("");
     const el = inputRef.current;
     if (el !== null) el.style.height = "auto"; // 发送后高度复位
+  };
+
+  // 工具栏「新对话」：清空本地消息 + 新建服务端会话，回到空态（欢迎语+推荐 chips）。
+  // busy 时禁用（防打断流式）；createSession 失败仅清本地，发送时 send() 自愈重建。
+  const startNewChat = async (): Promise<void> => {
+    if (busy) return;
+    try {
+      const session = await createSession(userRef, aiTicket);
+      setSessionId(session);
+      localStorage.setItem("rfq-session-id", session);
+    } catch {
+      setSessionId(null);
+      localStorage.removeItem("rfq-session-id");
+    }
+    const welcome: ChatMessage = {
+      role: "assistant",
+      content: config?.chat.welcome_message ?? "您好，我是询盘助手。",
+    };
+    setMessages([welcome]);
+    localStorage.setItem("rfq-messages", JSON.stringify([welcome]));
+    stickToBottom.current = true;
+  };
+
+  // 工具栏快捷动作：直接发送对应问法（复用既有路由，不新增后端面）
+  const quickAsk = (message: string): void => {
+    if (busy) return;
+    void send(message);
   };
 
   const updateLast = (patch: Partial<ChatMessage>): void => {
@@ -414,27 +441,18 @@ export function ChatWidget({
         aria-live="polite"
         className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4"
       >
-        {/* Header（随消息滚动，非悬浮固定）：状态点 + 标题 + 免责声明 + 转人工 */}
-        <header className="-mx-4 -mt-4 mb-4 flex items-center justify-between border-b border-line bg-surface px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
-            </span>
-            <div>
-              <h1 className="text-base font-semibold leading-tight">{config?.display_name ?? "询盘助手"}</h1>
-              {/* 免责声明：AI 生成标识（随内容滚动） */}
-              <p className="text-[11px] leading-tight text-ink-muted">内容由 AI 生成 · 价格与货期以供应商确认为准</p>
-            </div>
+        {/* Header（随消息滚动，非悬浮固定）：状态点 + 标题 + 免责声明。
+            转人工已迁至 composer 上方常驻工具栏（滚动任意位置都可达）。 */}
+        <header className="-mx-4 -mt-4 mb-4 flex items-center gap-2.5 border-b border-line bg-surface px-4 py-3">
+          <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-light">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
+          </span>
+          <div>
+            <h1 className="text-base font-semibold leading-tight">{config?.display_name ?? "询盘助手"}</h1>
+            {/* 免责声明：AI 生成标识（随内容滚动） */}
+            <p className="text-[11px] leading-tight text-ink-muted">内容由 AI 生成 · 价格与货期以供应商确认为准</p>
           </div>
-          {/* 转人工入口：点击弹微信工程师二维码（CS-1.5 微信一对一主路径） */}
-          <button
-            type="button"
-            onClick={() => setShowWechatModal(true)}
-            className="shrink-0 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-medium text-orange-600 transition-colors hover:border-orange-300 hover:bg-orange-100"
-          >
-            转人工
-          </button>
         </header>
         {empty && (
           <div className="flex flex-col items-center gap-3 pt-10 text-center">
@@ -623,6 +641,46 @@ export function ChatWidget({
       )}
       {/* Input：容器式 composer（企业级契约：容器承担边框+焦点态，按钮排容器内部不压字；busy 同槽变停止钮） */}
       <form onSubmit={onSubmit} className="border-t border-line bg-surface py-2 px-3">
+        {/* 工具栏（常驻，不随消息滚动）：新对话 / 快捷动作 / 转人工——
+            转人工自滚动 header 迁入此排：滚到哪都能一键触达（CS-1.5 主路径可达性） */}
+        <div className="mb-1.5 flex items-center gap-1 px-1">
+          <button
+            type="button"
+            onClick={() => void startNewChat()}
+            disabled={busy}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink disabled:opacity-50"
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+            新对话
+          </button>
+          <button
+            type="button"
+            onClick={() => quickAsk("帮我创建询盘")}
+            disabled={busy}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink disabled:opacity-50"
+          >
+            <ClipboardList className="h-3.5 w-3.5" />
+            创建询盘
+          </button>
+          <button
+            type="button"
+            onClick={() => quickAsk("我的询盘有人跟吗")}
+            disabled={busy}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink disabled:opacity-50"
+          >
+            <ClipboardList className="h-3.5 w-3.5" />
+            我的询盘
+          </button>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => setShowWechatModal(true)}
+            className="flex items-center gap-1 rounded-md border border-orange-200 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-600 transition-colors hover:border-orange-300 hover:bg-orange-100"
+          >
+            <Headphones className="h-3.5 w-3.5" />
+            转人工
+          </button>
+        </div>
         <div className="flex items-end gap-1.5 rounded-xl border border-line bg-surface p-1 pl-2 transition-colors focus-within:border-primary focus-within:shadow-sm">
           <textarea
             ref={inputRef}
