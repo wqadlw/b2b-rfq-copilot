@@ -23,6 +23,7 @@ import {
 import type { EntityCardData } from "../../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
+import { SelectionWizardCard } from "./SelectionWizardCard";
 import { toEntityCard } from "../../lib/cardMapper";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
 import { cn, prefillFromEvent } from "../../lib/utils";
@@ -87,17 +88,6 @@ const formatConversationTime = (ts: number): string => {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-// 选型向导的应用场景预设（覆盖真空设备主流行业）
-const WIZARD_SCENES: string[] = [
-  "实验室",
-  "真空镀膜",
-  "化工过程",
-  "半导体制造",
-  "食品包装",
-  "真空热处理",
-  "医疗设备",
-];
-
 const DEMO_PRODUCT_NAMES: Record<string, string> = {
   "demo-p-001": "demo 设备 真空泵 001 型",
   "demo-p-002": "demo 设备 真空泵 002 型",
@@ -150,13 +140,10 @@ export function ChatWidget({
   // 转人工 = 微信工程师二维码弹层（微信一对一即人工主路径；CS-1.5 manifest 二维码配置贯通）
   const [showWechatModal, setShowWechatModal] = useState(false);
   // 工具栏二级菜单："chat"（新对话/历史会话）、"select"（选型向导/应用方案）与 "inquiry"（创建/我的询盘）；
-  // "chat-history" / "select-wizard" 为对应二级面板。
-  const [openMenu, setOpenMenu] = useState<"chat" | "chat-history" | "select" | "select-wizard" | "inquiry" | null>(null);
+  // "chat-history" 为「历史会话」的二级列表。
+  const [openMenu, setOpenMenu] = useState<"chat" | "chat-history" | "select" | "inquiry" | null>(null);
   const [conversations, setConversations] = useState<SavedConversation[]>([]);
-  // 选型向导表单（选型 ▾ → 选型向导）：三字段组装工况消息，走引擎 spec_match_flow
-  const [wizardSpeed, setWizardSpeed] = useState("");
-  const [wizardVacuum, setWizardVacuum] = useState("");
-  const [wizardScene, setWizardScene] = useState("");
+
   // 生产态游客登录引导：用户可关闭（会话内不再出现）
   const [showLoginHint, setShowLoginHint] = useState(true);
   // 轮播占位语下标：4s 切换（busy 时暂停轮播，placeholder 固定"正在生成…"）
@@ -302,6 +289,14 @@ export function ChatWidget({
   // 工具栏快捷动作：直接发送对应问法（复用既有路由，不新增后端面）
   const quickAsk = (message: string): void => {
     if (busy) return;
+    void send(message);
+  };
+
+  // 选型表单卡提交：标记该卡已提交（持久化）并按组装的工况消息发起匹配
+  const handleWizardSubmit = (index: number, message: string): void => {
+    setMessages((prev) =>
+      prev.map((m, i) => (i === index && m.selectionForm ? { ...m, selectionForm: { submitted: true } } : m)),
+    );
     void send(message);
   };
 
@@ -585,6 +580,13 @@ export function ChatWidget({
                 onInquiry={(card) => void send(`我要询盘：${card.name}`)}
               />
             )}
+            {message.selectionForm && (
+              <SelectionWizardCard
+                submitted={!!message.selectionForm.submitted}
+                disabled={busy}
+                onSubmit={(msg) => handleWizardSubmit(index, msg)}
+              />
+            )}
             {message.error && lastUserMessage.current !== "" && (
               <button
                 type="button"
@@ -737,7 +739,7 @@ export function ChatWidget({
         {openMenu !== null && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setOpenMenu(null)} aria-hidden="true" />
-            <div className={`absolute bottom-full left-3 z-50 mb-2 rounded-xl border border-line bg-surface p-1 shadow-lg ${openMenu === "select-wizard" ? "w-72" : "w-60"}`}>
+            <div className={`absolute bottom-full left-3 z-50 mb-2 rounded-xl border border-line bg-surface p-1 shadow-lg "w-60"`}>
               {openMenu === "chat" && (
                 <>
                   <button
@@ -800,7 +802,15 @@ export function ChatWidget({
                 <>
                   <button
                     type="button"
-                    onClick={() => setOpenMenu("select-wizard")}
+                    onClick={() => {
+                      setOpenMenu(null);
+                      if (busy) return;
+                      setMessages((prev) => [
+                        ...prev,
+                        { role: "assistant", content: "好的，请在下方表单填写工况，我来帮您匹配产品：", selectionForm: {} },
+                      ]);
+                      stickToBottom.current = true;
+                    }}
                     disabled={busy}
                     className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
                   >
@@ -823,63 +833,6 @@ export function ChatWidget({
                     应用方案
                   </button>
                 </>
-              )}
-              {openMenu === "select-wizard" && (
-                <div className="p-2">
-                  <button
-                    type="button"
-                    onClick={() => setOpenMenu("select")}
-                    className="flex items-center gap-1 rounded-lg px-1 py-1 text-left text-[11px] text-ink-muted transition-colors hover:bg-muted hover:text-ink"
-                  >
-                    <ChevronLeft className="h-3 w-3" />
-                    返回
-                  </button>
-                  <p className="px-1 pb-2 pt-1 text-[11px] text-ink-muted">填工况找产品，至少填一项</p>
-                  <div className="flex gap-1.5 pb-1.5">
-                    <input
-                      value={wizardSpeed}
-                      onChange={(e) => setWizardSpeed(e.target.value)}
-                      inputMode="decimal"
-                      placeholder="抽速 m³/h"
-                      className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:border-primary focus:outline-none"
-                    />
-                    <input
-                      value={wizardVacuum}
-                      onChange={(e) => setWizardVacuum(e.target.value)}
-                      inputMode="decimal"
-                      placeholder="极限真空 Pa"
-                      className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:border-primary focus:outline-none"
-                    />
-                  </div>
-                  <select
-                    value={wizardScene}
-                    onChange={(e) => setWizardScene(e.target.value)}
-                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
-                  >
-                    <option value="">应用场景（可选）</option>
-                    {WIZARD_SCENES.map((scene) => (
-                      <option key={scene} value={scene}>
-                        {scene}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const parts: string[] = [];
-                      if (wizardSpeed.trim()) parts.push(`抽速 ${wizardSpeed.trim()} m³/h`);
-                      if (wizardVacuum.trim()) parts.push(`极限真空 ${wizardVacuum.trim()} Pa`);
-                      if (wizardScene) parts.push(`用于${wizardScene}`);
-                      if (parts.length === 0 || busy) return;
-                      setOpenMenu(null);
-                      quickAsk(`帮我选型一台真空泵：${parts.join("，")}，请推荐合适的产品。`);
-                    }}
-                    disabled={busy || (!wizardSpeed.trim() && !wizardVacuum.trim() && !wizardScene)}
-                    className="mt-2 w-full rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover disabled:bg-line disabled:text-ink-muted"
-                  >
-                    一键找产品
-                  </button>
-                </div>
               )}
               {openMenu === "inquiry" && (
                 <>
@@ -926,7 +879,7 @@ export function ChatWidget({
           </button>
           <button
             type="button"
-            onClick={() => setOpenMenu(openMenu === "select" || openMenu === "select-wizard" ? null : "select")}
+            onClick={() => setOpenMenu(openMenu === "select" ? null : "select")}
             className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
