@@ -149,15 +149,17 @@ def create_app() -> FastAPI:
 
     # CORS（QA-0001 / ADR-0005）：永不通配源+凭证。生产由 CORS_ALLOW_ORIGINS 显式
     # 白名单；未配置时仅放行本机开发源（localhost/127.0.0.1），默认拒绝其余跨域。
+    # 方法/头按最小权限枚举（ADR-0005 收紧补充）：widget 只用 GET/POST + Content-Type，
+    # 内部端点走 X-Internal-Token 服务器间调用不经浏览器，预检层直接拒绝 X-Internal-Token。
     cors_origins = [o.strip() for o in get_settings().cors_allow_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=["*"],
+        allow_credentials=False,  # 鉴权走请求体 ai_ticket（E1），不依赖 cookies
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+        max_age=600,
     )
 
     @app.post("/api/v1/sessions", response_model=SessionCreateResponse)

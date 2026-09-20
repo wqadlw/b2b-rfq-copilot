@@ -60,3 +60,62 @@ def test_cors_allowlist_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ok.headers.get("access-control-allow-origin") == "https://www.your-domain.com"
     assert bad.headers.get("access-control-allow-origin") is None
     get_settings.cache_clear()
+
+
+# ---- ADR-0005 收紧补充（2026-09-20）：方法/头最小权限 + 凭证关闭 + 预检缓存 ----
+
+
+def test_cors_preflight_allows_widget_methods_and_content_type(api_client: TestClient) -> None:
+    """白名单内源预检：widget 实际调用面（POST + Content-Type）必须放行。
+
+    预检响应只暴露 GET/POST——DELETE 等内部端点方法不进 Access-Control-Allow-Methods。
+    """
+    r = api_client.options(
+        "/api/v1/chat/stream",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    methods = r.headers.get("access-control-allow-methods", "")
+    assert "POST" in methods and "GET" in methods
+    assert "DELETE" not in methods and "PUT" not in methods
+
+
+def test_cors_preflight_rejects_disallowed_method(api_client: TestClient) -> None:
+    """预检方法白名单外（DELETE /knowledge 属服务器间调用）→ 400 拒绝。"""
+    r = api_client.options(
+        "/api/v1/knowledge/some-doc",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "DELETE",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_cors_preflight_rejects_internal_token_header(api_client: TestClient) -> None:
+    """浏览器预检携带 X-Internal-Token → 400 拒绝（内部端点对浏览器双保险）。"""
+    r = api_client.options(
+        "/api/v1/knowledge/some-doc",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-internal-token",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_cors_credentials_header_absent(api_client: TestClient) -> None:
+    """allow_credentials=False：响应不得携带 Access-Control-Allow-Credentials。
+
+    鉴权走请求体 ai_ticket（E1 票据桥），关闭凭证后配合源白名单
+    关死"诱导已登录浏览器携凭证跨域调用"的攻击面。
+    """
+    allowed = api_client.get("/api/v1/ui-config", headers={"Origin": "http://localhost:5173"})
+    assert allowed.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert allowed.headers.get("access-control-allow-credentials") is None
