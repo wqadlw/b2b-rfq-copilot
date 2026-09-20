@@ -125,8 +125,8 @@ export interface ChatMessage {
   inquiryCreated?: boolean;
   citations?: Citation[];
   cards?: EntityCardData[];
-  /** 选型向导表单卡（菜单下发；submitted 后禁填，随消息持久化） */
-  selectionForm?: { submitted?: boolean };
+  /** 选型向导表单卡（菜单下发；submitted 后禁填并显示工况摘要，随消息持久化） */
+  selectionForm?: { submitted?: boolean; summary?: string };
   error?: boolean;
   wechatGuidance?: string;
   wechatQr?: WechatQr;
