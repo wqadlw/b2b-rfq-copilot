@@ -365,29 +365,6 @@ export function ChatWidget({
 
   return (
     <div className="flex h-screen max-w-2xl flex-col">
-      {/* Header：状态点 + 标题 + 能力徽章 */}
-      <header className="flex items-center justify-between border-b border-line bg-surface px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
-          </span>
-          <div>
-            <h1 className="text-base font-semibold leading-tight">{config?.display_name ?? "询盘助手"}</h1>
-            {/* 免责声明常驻 header 副标题：合规要求 AI 生成标识始终可见，且不占 composer 高度 */}
-            <p className="text-[11px] leading-tight text-ink-muted">内容由 AI 生成 · 价格与货期以供应商确认为准</p>
-          </div>
-        </div>
-        {/* 转人工入口：右上角常驻，点击弹微信工程师二维码（CS-1.5 微信一对一主路径） */}
-        <button
-          type="button"
-          onClick={() => setShowWechatModal(true)}
-          className="shrink-0 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-medium text-orange-600 transition-colors hover:border-orange-300 hover:bg-orange-100"
-        >
-          转人工
-        </button>
-      </header>
-
       {/* 转人工弹层：微信二维码（manifest chat.wechat 配置贯通 ui-config） */}
       {showWechatModal && (
         <div
@@ -437,6 +414,28 @@ export function ChatWidget({
         aria-live="polite"
         className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4"
       >
+        {/* Header（随消息滚动，非悬浮固定）：状态点 + 标题 + 免责声明 + 转人工 */}
+        <header className="-mx-4 -mt-4 mb-4 flex items-center justify-between border-b border-line bg-surface px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
+            </span>
+            <div>
+              <h1 className="text-base font-semibold leading-tight">{config?.display_name ?? "询盘助手"}</h1>
+              {/* 免责声明：AI 生成标识（随内容滚动） */}
+              <p className="text-[11px] leading-tight text-ink-muted">内容由 AI 生成 · 价格与货期以供应商确认为准</p>
+            </div>
+          </div>
+          {/* 转人工入口：点击弹微信工程师二维码（CS-1.5 微信一对一主路径） */}
+          <button
+            type="button"
+            onClick={() => setShowWechatModal(true)}
+            className="shrink-0 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-medium text-orange-600 transition-colors hover:border-orange-300 hover:bg-orange-100"
+          >
+            转人工
+          </button>
+        </header>
         {empty && (
           <div className="flex flex-col items-center gap-3 pt-10 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-light">
