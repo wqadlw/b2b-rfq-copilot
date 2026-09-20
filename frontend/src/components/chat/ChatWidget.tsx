@@ -25,7 +25,7 @@ import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { toEntityCard } from "../../lib/cardMapper";
 import { createSession, fetchUiConfig, requestHandoff, sendFeedback, streamChat } from "../../lib/api";
-import { cn } from "../../lib/utils";
+import { cn, prefillFromEvent } from "../../lib/utils";
 import { createInquiryCardState, inquiryReducer } from "../../lib/inquiryReducer";
 import type { ChatMessage, UiConfig } from "../../lib/types";
 
@@ -154,6 +154,18 @@ export function ChatWidget({
       localStorage.setItem("rfq-session-id", sessionId);
     }
   }, [messages, sessionId]);
+
+  // 主动触达预填通道：站点 ai-proactive.js 点击 teaser 后派发 rfq:prefill（detail.message）。
+  // 预填只写入输入框（不自动发送），由用户确认后发出——低承诺 CTA。
+  useEffect(() => {
+    const onPrefill = (e: Event): void => {
+      const detail = (e as CustomEvent).detail;
+      setInput((prev) => prefillFromEvent(prev, detail));
+      inputRef.current?.focus();
+    };
+    window.addEventListener("rfq:prefill", onPrefill);
+    return () => window.removeEventListener("rfq:prefill", onPrefill);
+  }, []);
 
   // 用户侧转人工：幂等端点；成功落本地提示（human_serving 下用户消息本就绕过 LLM，
   // 坐席回复经 reply 落库后用户下次发消息即见——与 CS-1 现有语义衔接）
