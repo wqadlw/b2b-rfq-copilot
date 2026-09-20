@@ -174,6 +174,11 @@ def select_search_keyword(message: str, understanding: dict[str, Any] | None) ->
 
     防陈旧实体劫持：多轮槽位合并会保留历史实体，因此只接受"实体文本出现在
     当前消息中（或消息出现在实体中）"的实体——保证关键词与用户本轮所说一致。
+
+    头二字放宽（2026-09-20 实测 B5）：LLM 会把用户的口语说法规范化成品类词
+    ——说「无油泵」而实体是「无油真空泵」，逐字比对不中 → 实体被弃 → 整句
+    去 LIKE 搜索必零结果。故补充：实体的**首二字限定词头**（"无油"）出现在
+    当前消息中也采纳；陈旧实体（与本轮无关的品类）头二字通常不会出现，仍被拦。
     """
     text = (message or "").strip()
     entities = (understanding or {}).get("entities") or {}
@@ -189,6 +194,9 @@ def select_search_keyword(message: str, understanding: dict[str, Any] | None) ->
             if not keyword:
                 continue
             if keyword in text or text in keyword:
+                return keyword[:40]
+            # B5 放宽：首二字限定词头命中即采纳（"无油真空泵" vs 用户说"无油泵"）
+            if len(keyword) >= 2 and keyword[:2] in text:
                 return keyword[:40]
     return text[:40]
 
