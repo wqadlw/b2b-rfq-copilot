@@ -25,7 +25,7 @@ import { MessageBubble } from "./MessageBubble";
 import { SuggestionChips } from "./SuggestionChips";
 import { toEntityCard } from "../../lib/cardMapper";
 import { createSession, fetchUiConfig, sendFeedback, streamChat } from "../../lib/api";
-import { cn } from "../../lib/utils";
+import { cn, prefillFromEvent } from "../../lib/utils";
 import { createInquiryCardState, inquiryReducer } from "../../lib/inquiryReducer";
 import type { ChatMessage, UiConfig } from "../../lib/types";
 
@@ -152,6 +152,18 @@ export function ChatWidget({
       localStorage.setItem("rfq-session-id", sessionId);
     }
   }, [messages, sessionId]);
+
+  // 主动触达预填通道：站点 ai-proactive.js 点击 teaser 后派发 rfq:prefill（detail.message）。
+  // 预填只写入输入框（不自动发送），由用户确认后发出——低承诺 CTA。
+  useEffect(() => {
+    const onPrefill = (e: Event): void => {
+      const detail = (e as CustomEvent).detail;
+      setInput((prev) => prefillFromEvent(prev, detail));
+      inputRef.current?.focus();
+    };
+    window.addEventListener("rfq:prefill", onPrefill);
+    return () => window.removeEventListener("rfq:prefill", onPrefill);
+  }, []);
 
   // 智能滚动：仅当用户停留在底部附近时跟随；用户上翻阅读时不打断
   useEffect(() => {
