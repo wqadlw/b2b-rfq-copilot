@@ -111,9 +111,11 @@ class VacuumSampleProductCatalog(ProductCatalogPort):
 
         merged: dict[str, Any] = {}
         for term in terms:
+            # 01-port-spec §114：page_size 上限 20（站点校验 max:20，超限 422）。
+            # 曾用 50 触发 422 → UpstreamUnavailable → 用户看到"系统正在繁忙"。
             fallback_payload = await self._client.get_json(
                 "/internal-api/v1/products/search",
-                params={"keyword": term, "page": 1, "page_size": 50},
+                params={"keyword": term, "page": 1, "page_size": 20},
             )
             for item in _model(ProductSearchResult, fallback_payload).items:
                 merged.setdefault(item.id, item)

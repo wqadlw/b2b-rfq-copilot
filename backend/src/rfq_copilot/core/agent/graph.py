@@ -307,15 +307,14 @@ def _respond_node(deps: GraphDeps) -> Any:
                 close = "\n".join(f"- {p.name}（{p.supplier_name}）" for p in result.items[:3])
                 answer = no_match_head + "\n" + close + "\n" + tail
             else:
-                lines = ["根据您的规格需求，以下产品最匹配（按匹配度排序）："]
+                # 文本只做引导（数据交给卡片，与 product_flow 同理念，杜绝文本复读卡片内容）；
+                # 卡片规格走 _humanize_spec_value 去尾零（曾出 "540.00 m³/h"/"0.0000 Pa"）。
                 for product, _score in matched[:3]:
-                    specs_text = "；".join(f"{k}:{v}" for k, v in list(product.specs.items())[:3])
                     price_text = (
                         product.price_display.text if product.price_display.mode == "shown" else "请联系供应商询价"
                     )
                     if product.price_display.mode == "shown":
                         whitelist.add(product.price_display.text.strip())
-                    lines.append(f"  {product.name}（{product.supplier_name}）{specs_text}｜{price_text}")
                     events.append(("citation", {"title": product.name, "trust": "merchant"}))
                     events.append(
                         (
@@ -326,11 +325,16 @@ def _respond_node(deps: GraphDeps) -> Any:
                                 "supplier": product.supplier_name,
                                 "price": price_text,
                                 "url": product.url,
-                                "specs": dict(list(product.specs.items())[:3]),
+                                "specs": {
+                                    key: _humanize_spec_value(value) for key, value in list(product.specs.items())[:3]
+                                },
                             },
                         )
                     )
-                answer = "\n".join(lines)
+                answer = (
+                    f"根据您的规格需求，匹配到 {len(matched)} 款产品（已按匹配度排序，见下方卡片）。"
+                    "想看某款的详细参数、对比机型，或直接发起询盘，告诉我即可。"
+                )
         elif route == "solution_flow" and deps.solutions is not None:
             tool_calls.append("get_solution")
             events.append(("tool_call", {"tool": "get_solution", "status": "running"}))

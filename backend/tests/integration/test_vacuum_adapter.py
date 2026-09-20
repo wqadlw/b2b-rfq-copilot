@@ -296,6 +296,31 @@ async def test_primary_zero_triggers_split_fallback() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_fallback_respects_page_size_cap_20() -> None:
+    """回归（2026-09-20 实测事故）：回退请求 page_size 曾用 50，违反 01-port-spec §114
+    上限 20 → 站点校验 422 → UpstreamUnavailable → 用户看到"系统正在繁忙"。"""
+    _, catalog = _ports()
+    sent_sizes: list[str] = []
+    table = {
+        "无油真空泵": {"items": [], "total": 0},
+        "无油": {"items": [_item(1, "无油旋片真空泵")], "total": 1},
+        "真空泵": {"items": [_item(2, "螺杆真空泵")], "total": 1},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent_sizes.append(str(request.url.params.get("page_size")))
+        kw = request.url.params.get("keyword")
+        return httpx.Response(200, json=table.get(kw, {"items": [], "total": 0}))
+
+    respx.get(f"{BASE}/internal-api/v1/products/search").mock(side_effect=handler)
+    await catalog.search(ProductSearchQuery(keyword="无油真空泵", page_size=10))
+
+    assert len(sent_sizes) == 4  # 首查 + 3 次回退
+    assert all(size == "20" for size in sent_sizes[1:])  # 回退请求全部 ≤ 契约上限
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_fallback_slices_to_page_size() -> None:
     _, catalog = _ports()
     table = {
