@@ -122,3 +122,62 @@ def test_stale_entity_with_unrelated_head_rejected() -> None:
 
 def test_no_entities_falls_back_to_message() -> None:
     assert select_search_keyword("有哪些无油泵？", None) == "有哪些无油泵？"
+
+
+# ---------------------------------------------------------------------------
+# ADR-0009 D4：场景类追问护栏（scenario_over_clarify）
+# ---------------------------------------------------------------------------
+
+from rfq_copilot.core.agent.routing_guards import apply_scenario_followup_guard  # noqa: E402
+
+_HIST = [
+    {"role": "user", "content": "什么是罗茨泵？"},
+    {"role": "assistant", "content": "罗茨泵是一种容积式真空泵。"},
+]
+
+
+def test_scenario_followup_switches_to_knowledge_flow() -> None:
+    got = apply_scenario_followup_guard("它适合什么场景？", _u("selection_flow"), _HIST)
+    assert got["route"] == "knowledge_flow"
+    assert got["route_guard"] == "scenario_over_clarify"
+    assert got["route_guard_from"]["route"] == "selection_flow"
+
+
+def test_scenario_guard_covers_marker_variants() -> None:
+    for msg in ("它用在哪？", "罗茨泵的应用场景是什么", "这泵适合什么行业？"):
+        got = apply_scenario_followup_guard(msg, _u("selection_flow"), _HIST)
+        assert got["route"] == "knowledge_flow"
+
+
+def test_scenario_guard_requires_history() -> None:
+    """首轮场景问题（无历史）不拦——留给意图分类器。"""
+    got = apply_scenario_followup_guard("罗茨泵适合什么场景？", _u("selection_flow"), [])
+    assert got["route"] == "selection_flow"
+    assert "route_guard" not in got
+
+
+def test_scenario_guard_requires_product_context_in_history() -> None:
+    """历史无产品语境（闲聊）不拦。"""
+    chat_hist = [{"role": "user", "content": "你好"}, {"role": "assistant", "content": "您好！"}]
+    got = apply_scenario_followup_guard("它适合什么场景？", _u("selection_flow"), chat_hist)
+    assert got["route"] == "selection_flow"
+
+
+def test_scenario_guard_only_touches_selection_flow() -> None:
+    for route in ("product_flow", "compare_flow", "knowledge_flow"):
+        got = apply_scenario_followup_guard("它适合什么场景？", _u(route), _HIST)
+        assert got["route"] == route
+        assert "route_guard" not in got
+
+
+def test_scenario_guard_respects_existing_guard() -> None:
+    u = {**_u("selection_flow"), "route_guard": "selection_over_search"}
+    got = apply_scenario_followup_guard("它适合什么场景？", u, _HIST)
+    assert got["route_guard"] == "selection_over_search"  # 不覆盖前序护栏
+
+
+def test_scenario_guard_does_not_mutate_input() -> None:
+    u = _u("selection_flow")
+    snapshot = dict(u)
+    apply_scenario_followup_guard("它适合什么场景？", u, _HIST)
+    assert u == snapshot

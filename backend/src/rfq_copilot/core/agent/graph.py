@@ -19,7 +19,9 @@ from langgraph.types import interrupt
 from rfq_copilot.core.agent.llm import LLMClient
 from rfq_copilot.core.agent.routing_guards import (
     INQUIRY_CREATE_MARKERS,
+    SCENARIO_MARKERS,
     apply_routing_guards,
+    apply_scenario_followup_guard,
     apply_selection_guard,
     detect_inquiry_status_query,
     select_search_keyword,
@@ -467,7 +469,18 @@ def _respond_node(deps: GraphDeps) -> Any:
             events.append(("tool_call", {"tool": "search_knowledge", "status": "running"}))
             # 01-port-spec §6.4.1：understanding.entities → SpecCriteria 规格过滤（回落保护在 pipeline 内）
             spec = extract_spec_criteria((state.get("understanding") or {}).get("entities") or {})
-            context, chunks = await deps.rag.context_for(message, spec=None if spec.is_empty else spec)
+            # ADR-0009 D5：指代追问的检索改写——"它适合什么场景？"零语义，向量召回必差。
+            # 仅当消息含指代词/场景标记时，用槽位合并解析出的品类实体补写检索词
+            # （软信号：只加检索词，不决定查询；新话题不含指代词则不补写，防陈旧污染）。
+            retrieval_query = state.get("message", "")
+            if any(w in retrieval_query for w in ("它", "这个", "该", "这种", "此", *SCENARIO_MARKERS)):
+                entities = (state.get("understanding") or {}).get("entities") or {}
+                category = entities.get("product_category")
+                if isinstance(category, list):
+                    category = next((c for c in category if isinstance(c, str)), "")
+                if isinstance(category, str) and category.strip() and category.strip() not in retrieval_query:
+                    retrieval_query = f"{retrieval_query} {category.strip()}"
+            context, chunks = await deps.rag.context_for(retrieval_query, spec=None if spec.is_empty else spec)
             events.append(("retrieval", {"count": len(chunks), "trust": [c.trust_level for c in chunks]}))
             for i, c in enumerate(chunks, start=1):
                 events.append(("citation", {"index": i, "title": c.title, "trust": c.trust_level}))
@@ -815,6 +828,10 @@ def _understand_node(deps: GraphDeps) -> Any:
         # ADR-0008 D1：类型级选型咨询误入产品搜索路由 → 改道 knowledge_flow（RAG 作答）
         u = apply_selection_guard(state.get("message", ""), u)
         if u.get("route_guard") == "selection_over_search":
+            events.append(("status", {"message": "正在整理回答"}))
+        # ADR-0009 D4：场景类追问（"它适合什么场景"）误入 selection_flow 补工况兜底 → knowledge_flow
+        u = apply_scenario_followup_guard(state.get("message", ""), u, deps.store.messages(state["session_id"])[:-1])
+        if u.get("route_guard") == "scenario_over_clarify":
             events.append(("status", {"message": "正在整理回答"}))
         return {"understanding": u, "route": str(u["route"]), "events": events}
 

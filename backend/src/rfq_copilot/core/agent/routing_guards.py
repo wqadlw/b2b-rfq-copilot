@@ -227,3 +227,54 @@ def detect_inquiry_status_query(message: str) -> bool:
         "询价状态",
     )
     return any(marker in text for marker in markers)
+
+
+# ---------------------------------------------------------------------------
+# ADR-0009 D4：场景类追问护栏（scenario_over_clarify）
+# ---------------------------------------------------------------------------
+
+SCENARIO_MARKERS = (
+    "适合什么",
+    "什么场景",
+    "应用场景",
+    "用在哪",
+    "用在什么",
+    "哪个行业",
+    "什么行业",
+    "适用范围",
+    "哪些场合",
+)
+
+_PRODUCT_CONTEXT_WORDS = ("泵", "机组")
+
+
+def apply_scenario_followup_guard(
+    message: str, understanding: dict[str, Any], history: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """场景类追问误入 selection_flow「补工况」兜底 → 改道 knowledge_flow（ADR-0009 D4）。
+
+    实测：user 问「什么是罗茨泵？」后追问「它适合什么场景？」——意图 LLM 借历史
+    正确解析了指代，却判 selection_inquiry → selection_flow 无规格数据时输出
+    「请补充更多信息…」。用户问的是知识，应 Retrieve-Then-Ask（先检索作答）。
+
+    窄口径：仅 selection_flow + 场景标记词 + 历史含产品语境（泵/机组）三条件齐备；
+    首轮场景问题（无历史）不拦，留给意图分类器。
+    """
+    if understanding.get("route_guard"):
+        return understanding
+    if understanding.get("route") != "selection_flow":
+        return understanding
+    text = (message or "").strip()
+    if not any(marker in text for marker in SCENARIO_MARKERS):
+        return understanding
+    if not history:
+        return understanding
+    joined = "".join(str(m.get("content", "")) for m in history)
+    if not any(word in joined for word in _PRODUCT_CONTEXT_WORDS):
+        return understanding
+    return {
+        **understanding,
+        "route": "knowledge_flow",
+        "route_guard": "scenario_over_clarify",
+        "route_guard_from": {"route": understanding.get("route")},
+    }

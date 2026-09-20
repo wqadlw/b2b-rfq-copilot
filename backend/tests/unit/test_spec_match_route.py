@@ -145,3 +145,57 @@ async def test_knowledge_answer_first_turn_has_no_history_block() -> None:
     answer_user = deps.llm.calls[-1][1]
     assert "【对话历史" not in answer_user
     assert "【问题】真空泵怎么选？" in answer_user
+
+
+# ---------------------------------------------------------------------------
+# ADR-0009 D5：knowledge_flow 指代追问检索改写（实体补写）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_knowledge_retrieval_enriches_category_for_anaphora(monkeypatch) -> None:
+    """「它适合什么场景？」+ 槽位实体罗茨泵 → 检索词补写品类（原样检索零语义）。"""
+    deps, _ = make_deps(
+        scripted=[
+            understanding("spec_inquiry", "knowledge_flow", entities={"product_category": "罗茨泵"}),
+            {"text_chunks": ["罗茨泵适合中低压差、大流量的场合。"]},
+        ]
+    )
+    captured: list[str] = []
+    original_search = deps.rag.search
+
+    async def spy(query: str, top_k: int | None = None, spec: object = None):
+        captured.append(query)
+        return await original_search(query, top_k=top_k, spec=spec)
+
+    monkeypatch.setattr(deps.rag, "search", spy)
+    deps.store.append_message("d51", "user", "什么是罗茨泵？")
+    deps.store.append_message("d51", "assistant", "罗茨泵是容积式真空泵。")
+    graph = build_graph(deps)
+    await graph.ainvoke({"session_id": "d51", "message": "它适合什么场景？"})
+    assert captured, "knowledge_flow 未触发检索"
+    assert "它适合什么场景" in captured[0]
+    assert "罗茨泵" in captured[0]
+
+
+@pytest.mark.asyncio
+async def test_knowledge_retrieval_not_enriched_for_fresh_topic(monkeypatch) -> None:
+    """不含指代词/场景标记的新话题 → 不补写（防陈旧实体污染检索）。"""
+    deps, _ = make_deps(
+        scripted=[
+            understanding("spec_inquiry", "knowledge_flow", entities={"product_category": "罗茨泵"}),
+            {"text_chunks": ["罗茨泵适合中低压差、大流量的场合。"]},
+        ]
+    )
+    captured: list[str] = []
+    original_search = deps.rag.search
+
+    async def spy(query: str, top_k: int | None = None, spec: object = None):
+        captured.append(query)
+        return await original_search(query, top_k=top_k, spec=spec)
+
+    monkeypatch.setattr(deps.rag, "search", spy)
+    graph = build_graph(deps)
+    await graph.ainvoke({"session_id": "d52", "message": "真空泵油雾分离器怎么换？"})
+    assert captured
+    assert captured[0] == "真空泵油雾分离器怎么换？"
