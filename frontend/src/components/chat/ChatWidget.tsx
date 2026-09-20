@@ -622,8 +622,8 @@ export function ChatWidget({
         )
       )}
       {/* Input：容器式 composer（企业级契约：容器承担边框+焦点态，按钮排容器内部不压字；busy 同槽变停止钮） */}
-      <form onSubmit={onSubmit} className="border-t border-line bg-surface p-3">
-        <div className="flex items-end gap-1.5 rounded-xl border border-line bg-surface p-1.5 pl-2 transition-colors focus-within:border-primary focus-within:shadow-sm">
+      <form onSubmit={onSubmit} className="border-t border-line bg-surface py-2 px-3">
+        <div className="flex items-end gap-1.5 rounded-xl border border-line bg-surface p-1 pl-2 transition-colors focus-within:border-primary focus-within:shadow-sm">
           <textarea
             ref={inputRef}
             value={input}
@@ -631,29 +631,29 @@ export function ChatWidget({
             onChange={(event) => {
               setInput(event.target.value);
               event.target.style.height = "auto";
-              event.target.style.height = `${Math.min(event.target.scrollHeight, 120)}px`;
+              event.target.style.height = `${Math.min(event.target.scrollHeight, 96)}px`;
             }}
             onKeyDown={onKeyDown}
             placeholder={busy ? "正在生成…" : PLACEHOLDER_ROTATIONS[phIndex]}
-            className="min-h-9 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm leading-5 text-ink placeholder:text-ink-muted focus:outline-none"
+            className="min-h-7 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-ink placeholder:text-ink-muted focus:outline-none"
           />
           {busy ? (
             <button
               type="button"
               onClick={stop}
               aria-label="停止生成"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-white transition-transform active:scale-90"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-white transition-transform active:scale-90"
             >
-              <Square className="h-3.5 w-3.5" />
+              <Square className="h-3 w-3" />
             </button>
           ) : (
             <button
               type="submit"
               disabled={!input.trim()}
               aria-label="发送"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-all hover:bg-primary-hover active:scale-95 disabled:bg-line disabled:text-ink-muted"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-all hover:bg-primary-hover active:scale-95 disabled:bg-line disabled:text-ink-muted"
             >
-              <ArrowUp className="h-4 w-4" />
+              <ArrowUp className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
