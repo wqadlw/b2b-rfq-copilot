@@ -382,7 +382,7 @@ export function ChatWidget({
         <button
           type="button"
           onClick={() => setShowWechatModal(true)}
-          className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-primary hover:text-primary"
+          className="shrink-0 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-xs font-medium text-orange-600 transition-colors hover:border-orange-300 hover:bg-orange-100"
         >
           转人工
         </button>
