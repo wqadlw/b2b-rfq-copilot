@@ -1,6 +1,6 @@
 manifest_version: 1
 adapter: vacuum_b2b_sample
-display_name: "Vacuum Industry B2B (Sample)"
+display_name: "找真空 AI 采购助手"
 languages: [zh-CN]
 
 ports:
