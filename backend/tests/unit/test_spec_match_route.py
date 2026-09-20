@@ -67,8 +67,10 @@ async def test_spec_match_flow_reaches_respond_and_matches() -> None:
     graph = build_graph(deps)
     final = await graph.ainvoke({"session_id": "sm1", "message": "我需要抽速 100 m3/h 以上的泵"})
     assert "spec_match" in final["tool_calls"]
-    assert "最匹配" in final["answer"]
-    assert "demo 高速泵 120 型" in final["answer"]
+    assert "匹配到" in final["answer"] and "卡片" in final["answer"]
+    # 新设计：产品数据交给卡片事件，文本不再复读产品名（数据/文本分层）
+    card_names = [payload["name"] for kind, payload in final["events"] if kind == "card"]
+    assert "demo 高速泵 120 型" in card_names
 
 
 async def test_spec_match_flow_empty_entities_clarifies() -> None:
@@ -96,5 +98,6 @@ async def test_spec_match_flow_matches_real_demo_data() -> None:
     graph = build_graph(deps)
     final = await graph.ainvoke({"session_id": "sm4", "message": "我需要抽速 10 m3/h 以上的泵"})
     assert "spec_match" in final["tool_calls"]
-    assert "最匹配" in final["answer"]
-    assert "demo 设备" in final["answer"]
+    assert "匹配到" in final["answer"] and "卡片" in final["answer"]
+    card_names = [payload["name"] for kind, payload in final["events"] if kind == "card"]
+    assert any("demo 设备" in name for name in card_names)
