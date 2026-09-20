@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { AlertCircle, ArrowUp, CheckCircle2, ClipboardList, Headphones, Loader2, MessageSquarePlus, Pencil, Sparkles, Square, X } from "lucide-react";
+import { AlertCircle, ArrowUp, CheckCircle2, ClipboardList, Headphones, History, Loader2, MessageSquarePlus, Pencil, Sparkles, Square, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
 import {
@@ -43,6 +43,49 @@ const PLACEHOLDER_ROTATIONS: string[] = [
 function productName(productId: string | number): string {
   return DEMO_PRODUCT_NAMES[String(productId)] ?? `产品 ${productId}`;
 }
+
+// ---------------------------------------------------------------------------
+// 历史会话存档（ADR-0009 后续：新对话不丢老对话，最多存 10 条）
+// ---------------------------------------------------------------------------
+
+interface SavedConversation {
+  sid: string | null; // 服务端会话 id（恢复后续聊；null 则发送时自愈重建）
+  title: string; // 取首条用户消息截断
+  savedAt: number;
+  messages: ChatMessage[];
+}
+
+const HISTORY_KEY = "rfq-conversations";
+const HISTORY_LIMIT = 10;
+
+const loadConversations = (): SavedConversation[] => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]") as SavedConversation[];
+    return Array.isArray(parsed) ? parsed.slice(0, HISTORY_LIMIT) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveConversations = (items: SavedConversation[]): void => {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, HISTORY_LIMIT)));
+  } catch {
+    /* 隐私模式下静默跳过 */
+  }
+};
+
+const conversationTitle = (messages: ChatMessage[]): string => {
+  const firstUser = messages.find((m) => m.role === "user");
+  const text = (firstUser?.content ?? "").replace(/\s+/g, " ").trim();
+  return text.length > 18 ? `${text.slice(0, 18)}…` : text || "未命名会话";
+};
+
+const formatConversationTime = (ts: number): string => {
+  const d = new Date(ts);
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 
 const DEMO_PRODUCT_NAMES: Record<string, string> = {
   "demo-p-001": "demo 设备 真空泵 001 型",
@@ -95,6 +138,8 @@ export function ChatWidget({
   const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
   // 转人工 = 微信工程师二维码弹层（微信一对一即人工主路径；CS-1.5 manifest 二维码配置贯通）
   const [showWechatModal, setShowWechatModal] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<SavedConversation[]>([]);
   // 生产态游客登录引导：用户可关闭（会话内不再出现）
   const [showLoginHint, setShowLoginHint] = useState(true);
   // 轮播占位语下标：4s 切换（busy 时暂停轮播，placeholder 固定"正在生成…"）
@@ -188,8 +233,22 @@ export function ChatWidget({
 
   // 工具栏「新对话」：清空本地消息 + 新建服务端会话，回到空态（欢迎语+推荐 chips）。
   // busy 时禁用（防打断流式）；createSession 失败仅清本地，发送时 send() 自愈重建。
+  // 历史会话存档（localStorage，最多 10 条）：「新对话」前自动归档当前会话，
+  // 「历史」面板可随时回到老对话（恢复消息与 session 续聊）。
+  const toggleHistory = (): void => {
+    if (!showHistory) setConversations(loadConversations());
+    setShowHistory(!showHistory);
+  };
+
   const startNewChat = async (): Promise<void> => {
     if (busy) return;
+    // 归档当前会话（仅当真聊过：不止欢迎语一条）
+    if (messages.length > 1) {
+      const items = loadConversations();
+      items.unshift({ sid: sessionId, title: conversationTitle(messages), savedAt: Date.now(), messages });
+      saveConversations(items);
+      setConversations(items.slice(0, 10));
+    }
     try {
       const session = await createSession(userRef, aiTicket);
       setSessionId(session);
@@ -204,6 +263,22 @@ export function ChatWidget({
     };
     setMessages([welcome]);
     localStorage.setItem("rfq-messages", JSON.stringify([welcome]));
+    setShowHistory(false);
+    stickToBottom.current = true;
+  };
+
+  const restoreConversation = (item: SavedConversation): void => {
+    if (busy) return;
+    setMessages(item.messages);
+    if (item.sid) {
+      setSessionId(item.sid);
+      localStorage.setItem("rfq-session-id", item.sid);
+    } else {
+      setSessionId(null);
+      localStorage.removeItem("rfq-session-id");
+    }
+    localStorage.setItem("rfq-messages", JSON.stringify(item.messages));
+    setShowHistory(false);
     stickToBottom.current = true;
   };
 
@@ -640,8 +715,29 @@ export function ChatWidget({
         )
       )}
       {/* Input：容器式 composer（企业级契约：容器承担边框+焦点态，按钮排容器内部不压字；busy 同槽变停止钮） */}
-      <form onSubmit={onSubmit} className="border-t border-line bg-surface py-2 px-3">
-        {/* 工具栏（常驻，不随消息滚动）：新对话 / 快捷动作 / 转人工——
+      <form onSubmit={onSubmit} className="relative border-t border-line bg-surface py-2 px-3">
+        {/* 历史会话面板（工具栏上方弹出） */}
+        {showHistory && (
+          <div className="absolute bottom-full left-3 right-3 mb-2 max-h-64 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-lg">
+            {conversations.length === 0 ? (
+              <p className="px-3 py-3 text-xs text-ink-muted">暂无历史会话——点「新对话」后当前会话会自动存档到这里</p>
+            ) : (
+              conversations.map((item, index) => (
+                <button
+                  key={`${item.savedAt}-${index}`}
+                  type="button"
+                  onClick={() => restoreConversation(item)}
+                  disabled={busy}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
+                >
+                  <span className="truncate">{item.title}</span>
+                  <span className="shrink-0 text-[11px] text-ink-muted">{formatConversationTime(item.savedAt)}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+        {/* 工具栏（常驻，不随消息滚动）：新对话 / 历史 / 快捷动作 / 转人工——
             转人工自滚动 header 迁入此排：滚到哪都能一键触达（CS-1.5 主路径可达性） */}
         <div className="mb-1.5 flex items-center gap-1 px-1">
           <button
@@ -652,6 +748,15 @@ export function ChatWidget({
           >
             <MessageSquarePlus className="h-3.5 w-3.5" />
             新对话
+          </button>
+          <button
+            type="button"
+            onClick={toggleHistory}
+            disabled={busy}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink disabled:opacity-50"
+          >
+            <History className="h-3.5 w-3.5" />
+            历史
           </button>
           <button
             type="button"
