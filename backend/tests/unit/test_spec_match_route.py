@@ -10,6 +10,7 @@ from conftest import make_deps, understanding
 from rfq_copilot.core.agent.graph import build_graph, parse_understanding
 from rfq_copilot.ports.product_catalog import (
     PriceDisplay,
+    ProductDetail,
     ProductSearchQuery,
     ProductSearchResult,
     ProductSummary,
@@ -235,3 +236,54 @@ async def test_spec_match_flow_empty_entities_educational_followup() -> None:
     assert "选型向导" in answer and "用途" in answer
     # 追问不开匹配：无产品搜索
     assert "search_products" not in final["tool_calls"] and "spec_match" in final["tool_calls"]
+
+
+# ---------------------------------------------------------------------------
+# compare_flow 数字产品 ID（2026-09-21 线上实测：真实目录主键为 312/180 等数字，
+# 旧实现硬编码 demo-p-\d+ 致线上点名对比必失败；提取模式与路由守卫统一）
+# ---------------------------------------------------------------------------
+
+_NUM_A = ProductDetail(
+    id="312",
+    name="demo 分子泵机组 312",
+    category_name="真空机组",
+    brand_name="demo 品牌",
+    supplier_id="demo-s-001",
+    supplier_name="demo 供应商 1",
+    specs={"抽速": "120 m³/h", "极限真空": "0.005 Pa"},
+    price_display=PriceDisplay(mode="shown", text="¥1000.00"),
+    url="/products/312",
+    description="demo",
+    params={},
+)
+_NUM_B = ProductDetail(
+    id="180",
+    name="demo 罗茨机组 180",
+    category_name="真空机组",
+    brand_name="demo 品牌",
+    supplier_id="demo-s-001",
+    supplier_name="demo 供应商 1",
+    specs={"抽速": "80 m³/h", "极限真空": "0.01 Pa"},
+    price_display=PriceDisplay(mode="contact", text="请联系供应商询价"),
+    url="/products/180",
+    description="demo",
+    params={},
+)
+
+
+class _NumericDetailCatalog(_ScriptedCatalog):
+    async def get_detail(self, product_id: str):
+        return {"312": _NUM_A, "180": _NUM_B}.get(product_id)
+
+
+async def test_compare_flow_accepts_numeric_product_ids() -> None:
+    deps, _ = make_deps(scripted=[understanding("product_inquiry", "compare_flow", entities={})])
+    deps.catalog = _NumericDetailCatalog()
+    graph = build_graph(deps)
+    final = await graph.ainvoke({"session_id": "cm1", "message": "对比 312 和 180"})
+    compare_cards = [p for k, p in final["events"] if k == "card" and p.get("kind") == "product_compare"]
+    assert len(compare_cards) == 1
+    card = compare_cards[0]
+    assert [p["name"] for p in card["products"]] == ["demo 分子泵机组 312", "demo 罗茨机组 180"]
+    assert any(row["label"] == "抽速" for row in card["rows"])
+    assert "参数对比" in final["answer"]
