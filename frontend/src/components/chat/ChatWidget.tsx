@@ -105,6 +105,7 @@ interface PendingConfirm {
     quantity?: number | null;
     contact_name?: string;
     contact_phone_masked?: string;
+    specs?: string | null;
     missing_fields?: string[];
   };
 }
@@ -650,6 +651,7 @@ export function ChatWidget({
                   {pendingConfirm.draft.quantity !== undefined && pendingConfirm.draft.quantity !== null && (
                     <div>数量：{pendingConfirm.draft.quantity}</div>
                   )}
+                  {pendingConfirm.draft.specs && <div>工况：{pendingConfirm.draft.specs}</div>}
                   {pendingConfirm.draft.contact_name !== undefined && (
                     <div>联系人：{pendingConfirm.draft.contact_name}</div>
                   )}
