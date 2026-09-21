@@ -4,7 +4,7 @@
 未知键入 extra；match_products 降序排名、硬条件排除、ProductSummary（无 params）防御。
 """
 
-from rfq_copilot.core.rag.spec_matcher import extract_spec_criteria, match_products
+from rfq_copilot.core.rag.spec_matcher import extract_spec_criteria, match_products, scan_spec_entities
 from rfq_copilot.ports.product_catalog import PriceDisplay, ProductDetail, ProductSummary
 
 
@@ -131,3 +131,22 @@ def test_match_entries_vacuum_and_oil_free() -> None:
     entries = matched[0][2]
     assert "极限真空 0.01 Pa（需求 ≤ 0.05 Pa）" in entries
     assert "无油 ✓" in entries
+
+
+# ---------------------------------------------------------------------------
+# P1-4 确定性规格扫描：询盘快捷路由同句规格捕获（宁缺勿滥）
+# ---------------------------------------------------------------------------
+
+
+def test_scan_spec_entities_explicit_expressions() -> None:
+    assert scan_spec_entities("改成抽速 500 m3/h，帮我发起询盘") == {"pumping_speed": "500 m3/h"}
+    assert scan_spec_entities("极限真空 5 Pa，无油，发起询盘") == {"oil_free": "是", "ultimate_vacuum": "5 Pa"}
+    assert scan_spec_entities("抽速不低于300发起询盘") == {"pumping_speed": "300"}  # 缺单位按基准解释
+    assert scan_spec_entities("抽气速率 10 L/s 发起询盘") == {"pumping_speed": "10 L/s"}
+
+
+def test_scan_spec_entities_ambiguous_skipped() -> None:
+    # 科学计数 / 区间 / 无关键词 —— 一律不猜，交给 LLM 理解通道
+    assert scan_spec_entities("真空度 1×10⁻³ Pa 询盘") == {}
+    assert scan_spec_entities("抽速 300-1000 的询盘") == {}
+    assert scan_spec_entities("我要一台泵询盘") == {}
