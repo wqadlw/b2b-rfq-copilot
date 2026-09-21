@@ -706,7 +706,10 @@ def _respond_node(deps: GraphDeps) -> Any:
             answer = render_compare_answer(matrix)
 
         else:
-            answer = "请补充更多信息，例如目标真空度、抽速、应用场景，我来帮您缩小范围。"
+            answer = (
+                "请补充更多信息，例如目标真空度、抽速、应用场景，我来帮您缩小范围。"
+                "也可以点输入框上方「选型」→「选型向导」填工况表单。"
+            )
 
         answer, _ = filter_output(answer, frozenset(whitelist))
         return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
