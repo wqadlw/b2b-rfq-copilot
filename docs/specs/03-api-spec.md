@@ -1,6 +1,6 @@
 # 03 · API SPEC · 对外服务契约
 
-> 密级：公开 · 版本 v1.1 · 2026-09-21 · 上位文档：`01-port-spec.md`（端口与事件语义权威）；错误码与 SSE 事件清单承自 port-spec §8，本文定义 HTTP 形状与载荷。
+> 密级：公开 · 版本 v1.2 · 2026-09-21 · 上位文档：`01-port-spec.md`（端口与事件语义权威）；错误码与 SSE 事件清单承自 port-spec §8，本文定义 HTTP 形状与载荷。
 
 ## 0. 约定
 
@@ -45,7 +45,7 @@
 | `answer_delta` | `{"delta": "根据站内资料，"}` | 增量正文（拼接渲染） |
 | `citation` | `{"doc_id","title","section","trust","url?"}` | 单条引用（answer 中标注） |
 | `card` | `{"kind": "product\|supplier\|solution\|case\|inquiry_status\|product_compare", ...}` | 结构化实体卡（kind 实发全集，前端 cardMapper 表驱动消费；`product_compare` 载荷见下节） |
-| `inquiry_confirm` | `{"confirm_id": "cfm_xxx", "draft": {产品/数量/联系人/掩码电话}, "draft_json": "草稿原文 JSON 字符串（向后兼容保留）"}` | **确认门**：请求用户显式确认询盘草稿 |
+| `inquiry_confirm` | `{"confirm_id": "cfm_xxx", "draft": {产品/数量/工况摘要?/联系人/掩码电话}, "draft_json": "草稿原文 JSON 字符串（向后兼容保留）"}` | **确认门**：请求用户显式确认询盘草稿（`draft.specs` 为可选工况摘要字符串，源自草稿 params 的规格项，P1-4 v1.2 新增；无规格项为 `null`） |
 | `inquiry_created` | `{"inquiry_id": "1001", "state": "created"}` | 询盘创建成功（确认门通过后） |
 | `handoff` | `{"reason": "complex_selection", "priority": "high"}` | 转人工 |
 | `error` | `{"code": "UPSTREAM_TIMEOUT", "message": "…"}` | 错误（码表见 port-spec §8；Policy 类结果不走 error，走正常内容/模板） |

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from rfq_copilot.core.rag.chunking import Chunk
 from rfq_copilot.core.rag.quantities import QuantityRange, parse_quantity
@@ -292,6 +293,20 @@ _SPEC_TEXT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 _OIL_FREE_TEXT_PATTERN = re.compile(r"无油|oil[-\s]?free", re.I)
 
 
+def spec_entities_from(entities: dict[str, Any]) -> dict[str, str]:
+    """提取可跨轮累积的规格实体（canonical 键，与 extract_spec_criteria 同映射口径）。
+
+    P1-4：spec_match 命中后写入 spec_context 随 checkpoint 持久化，后续询盘轮
+    由 inquiry 节点合并进 draft.params——用户先聊规格后询盘，工况不再丢失。
+    """
+    out: dict[str, str] = {}
+    for key, value in entities.items():
+        canonical = SPEC_ALIASES.get(str(key).lower(), str(key).lower())
+        if canonical in SPEC_PARAM_LABELS:
+            out[canonical] = str(value)
+    return out
+
+
 def scan_spec_entities(text: str) -> dict[str, str]:
     """从用户消息确定性扫描规格实体（canonical 键，值保留用户原表达）。
 
@@ -307,3 +322,13 @@ def scan_spec_entities(text: str) -> dict[str, str]:
         if m:
             out[key] = m.group(1) + (f" {m.group(2)}" if m.group(2) else "")
     return out
+
+
+# 确认卡/话术用的规格摘要标签（P1-4；graph 与 sse_mapper 共用）
+SPEC_PARAM_LABELS: dict[str, str] = {"pumping_speed": "抽速", "ultimate_vacuum": "极限真空", "oil_free": "无油"}
+
+
+def spec_summary(params: dict[str, Any]) -> str:
+    """把参数字典中的规格项拼成「抽速 300 m³/h；极限真空 5 Pa」式摘要；无规格项返回空串。"""
+    bits = [f"{SPEC_PARAM_LABELS[k]} {params[k]}" for k in SPEC_PARAM_LABELS if k in params]
+    return "；".join(bits)

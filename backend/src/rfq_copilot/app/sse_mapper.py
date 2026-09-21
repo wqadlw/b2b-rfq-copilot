@@ -13,6 +13,7 @@ from typing import Any
 import structlog
 
 from rfq_copilot.app.runtime import Runtime
+from rfq_copilot.core.rag.spec_matcher import spec_summary
 from rfq_copilot.schemas.events import sse_text
 
 logger = structlog.get_logger(__name__)
@@ -44,6 +45,8 @@ def _draft_payload(draft_json: str) -> dict[str, Any]:
         "quantity": raw.get("quantity"),
         "contact_name": contact.get("name"),
         "contact_phone_masked": _mask(str(contact.get("phone") or "")),
+        # P1-4：确认卡附工况摘要（来自 draft.params 的规格项），无规格项为 None
+        "specs": spec_summary(raw.get("params") or {}) or None,
     }
 
 

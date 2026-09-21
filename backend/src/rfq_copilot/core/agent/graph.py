@@ -38,11 +38,12 @@ from rfq_copilot.core.rag.citation import validate_citations
 from rfq_copilot.core.rag.compare import build_compare_matrix, render_compare_answer
 from rfq_copilot.core.rag.pipeline import RAGPipeline
 from rfq_copilot.core.rag.spec_matcher import (
-    SPEC_ALIASES,
     extract_spec_criteria,
     fmt_num,
     match_products,
     scan_spec_entities,
+    spec_entities_from,
+    spec_summary,
 )
 from rfq_copilot.ports.errors import ConfigError, CopilotError
 from rfq_copilot.ports.industry_knowledge import CasesPort, SolutionsPort
@@ -357,30 +358,6 @@ def _handoff_node(deps: GraphDeps) -> Any:
     return node
 
 
-_SPEC_PARAM_KEYS = ("pumping_speed", "ultimate_vacuum", "oil_free")
-_SPEC_PARAM_LABELS = {"pumping_speed": "抽速", "ultimate_vacuum": "极限真空", "oil_free": "无油"}
-
-
-def _spec_entities(entities: dict[str, Any]) -> dict[str, str]:
-    """提取可跨轮累积的规格实体（canonical 键，与 extract_spec_criteria 同映射口径）。
-
-    P1-4：spec_match 命中后写入 spec_context 随 checkpoint 持久化，后续询盘轮
-    由 _inquiry_node 合并进 draft.params——用户先聊规格后询盘，工况不再丢失。
-    """
-    out: dict[str, str] = {}
-    for key, value in entities.items():
-        canonical = SPEC_ALIASES.get(str(key).lower(), str(key).lower())
-        if canonical in _SPEC_PARAM_KEYS:
-            out[canonical] = str(value)
-    return out
-
-
-def _spec_summary(params: dict[str, Any]) -> str:
-    """把（合并后）参数中的规格项拼成确认话术用的工况摘要；无规格项返回空串。"""
-    bits = [f"{_SPEC_PARAM_LABELS[k]} {params[k]}" for k in _SPEC_PARAM_KEYS if k in params]
-    return "；".join(bits)
-
-
 def _respond_node(deps: GraphDeps) -> Any:
     async def node(state: AgentState) -> dict[str, Any]:
         route = state.get("route", "clarify")
@@ -415,7 +392,7 @@ def _respond_node(deps: GraphDeps) -> Any:
                 )
                 return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
             # 搜索所有产品后按规格过滤
-            spec_ctx.update(_spec_entities(state.get("understanding", {}).get("entities", {})))
+            spec_ctx.update(spec_entities_from(state.get("understanding", {}).get("entities", {})))
             from rfq_copilot.ports.product_catalog import ProductSearchQuery as _PSQ
 
             search_fn = tools.get("search_products") or (deps.catalog.search if deps.catalog else None)
@@ -823,7 +800,7 @@ def _inquiry_node(deps: GraphDeps) -> Any:
         u = state.get("understanding", {})
         # P1-4 询盘工况带入：历史轮 spec_context 为底、当前轮实体优先，先聊规格后询盘不丢工况
         merged_params: dict[str, Any] = {**(state.get("spec_context") or {}), **(u.get("entities") or {})}
-        spec_bits = _spec_summary(merged_params)
+        spec_bits = spec_summary(merged_params)
         extract = AiExtract(
             intent=u.get("intent", "inquiry_flow"),
             confidence=float(u.get("confidence", 0.5)),
@@ -893,7 +870,7 @@ def _inquiry_node(deps: GraphDeps) -> Any:
                                 "quantity": draft.quantity,
                                 "contact_name": contact.name,
                                 "contact_phone_masked": _mask(contact.phone),
-                                "specs": _spec_summary(draft.params),
+                                "specs": spec_summary(draft.params),
                             },
                         },
                     )
