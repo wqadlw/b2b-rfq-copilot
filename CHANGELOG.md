@@ -7,6 +7,10 @@
 
 ### Added (2026-09-21)
 
+- **P1-5 规格意图确定性路由**：显式数值规格（「关键词+数字+单位」）+ 非守卫词 → 0-token
+  直达 `spec_match_flow`，消除 LLM 理解方差（"抽速 300 m3/h 的泵"偶落澄清）。守卫词表
+  `SPEC_ROUTE_GUARDS`（概念/比较问句、价格/货期/售后商务问句）交还 LLM/确定性拒绝；
+  eval 全族（A/B/C/D）在词表下零误伤（04-prompt-spec v1.4）。
 - **P1-4 收官：确认卡工况摘要**：`inquiry_confirm` 卡片 `draft` 新增可选 `specs` 字段
   （`spec_summary` 摘要，03-api-spec v1.2），前端确认卡渲染「工况：…」行；规格摘要/实体
   提取 helper 公共化到 `spec_matcher`（graph 与 sse_mapper 共用），`spec_summary` 无规格项
