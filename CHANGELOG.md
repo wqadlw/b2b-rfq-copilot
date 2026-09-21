@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Added (2026-09-21)
+
+- **`product_compare` 对比卡（03-api-spec v1.1）**：`card` 事件新增 `kind: "product_compare"`
+  载荷（criteria_summary / products[].matched_on / rows[].ok+direction_hint），
+  由 `spec_match_flow`（按用户规格条件对比）与 `compare_flow`（点名两产品矩阵）
+  各追加一张，与既有产品卡并存；匹配依据由确定性匹配器生成，禁止 LLM 生成理由。
+
 ### Changed (2026-09-18)
 
 - **QA-0007/0010 pgvector 真装配**：`VectorStore` 协议统一 async；新增 `PgVectorStore`
