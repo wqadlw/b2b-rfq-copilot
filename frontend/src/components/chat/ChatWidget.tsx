@@ -905,7 +905,7 @@ export function ChatWidget({
           <button
             type="button"
             onClick={() => setOpenMenu(openMenu === "chat" ? null : "chat")}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
           >
             对话
             <ChevronDown className="h-3 w-3" />
@@ -913,7 +913,7 @@ export function ChatWidget({
           <button
             type="button"
             onClick={() => setOpenMenu(openMenu === "select" ? null : "select")}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
           >
             选型
             <ChevronDown className="h-3 w-3" />
@@ -921,7 +921,7 @@ export function ChatWidget({
           <button
             type="button"
             onClick={() => setOpenMenu(openMenu === "inquiry" ? null : "inquiry")}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
           >
             询盘
             <ChevronDown className="h-3 w-3" />
@@ -929,7 +929,7 @@ export function ChatWidget({
           <button
             type="button"
             onClick={() => setOpenMenu(openMenu === "service" ? null : "service")}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
           >
             服务
             <ChevronDown className="h-3 w-3" />
