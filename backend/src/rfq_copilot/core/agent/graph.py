@@ -36,7 +36,7 @@ from rfq_copilot.core.prompts import PromptRegistry
 from rfq_copilot.core.rag.citation import validate_citations
 from rfq_copilot.core.rag.compare import build_compare_matrix, render_compare_answer
 from rfq_copilot.core.rag.pipeline import RAGPipeline
-from rfq_copilot.core.rag.spec_matcher import extract_spec_criteria, match_products
+from rfq_copilot.core.rag.spec_matcher import extract_spec_criteria, fmt_num, match_products
 from rfq_copilot.ports.errors import ConfigError, CopilotError
 from rfq_copilot.ports.industry_knowledge import CasesPort, SolutionsPort
 from rfq_copilot.ports.inquiry_sink import AiExtract, Contact, InquiryDraft, InquirySinkPort
@@ -124,6 +124,86 @@ def _product_cards_payload(items: list[Any], whitelist: set[str]) -> tuple[list[
             },
         )
     return cards, len(items)
+
+
+def _product_compare_payload(matched: list[tuple[Any, float, list[str]]], criteria: Any) -> dict[str, Any]:
+    """规格匹配对比卡（03-api-spec v1.1 `kind: product_compare`）。
+
+    行=用户数值条件（附需求口径），列=各产品参数原文；ok 恒 true（硬条件排除
+    语义保证在榜产品全部满足）；匹配依据 matched_on 由 matcher 生成（grounded）。
+    """
+    criteria_summary: list[str] = []
+    if criteria.pumping_speed_min is not None:
+        criteria_summary.append(f"抽速 ≥ {fmt_num(criteria.pumping_speed_min)} m³/h")
+    if criteria.ultimate_vacuum_max is not None:
+        criteria_summary.append(f"极限真空 ≤ {fmt_num(criteria.ultimate_vacuum_max)} Pa")
+    if criteria.oil_free:
+        criteria_summary.append("无油")
+
+    products: list[dict[str, Any]] = []
+    speed_values: list[str] = []
+    vacuum_values: list[str] = []
+    for product, _score, entries in matched[:3]:
+        price_text = product.price_display.text if product.price_display.mode == "shown" else "请联系供应商询价"
+        products.append(
+            {
+                "name": product.name,
+                "supplier": product.supplier_name,
+                "price": price_text,
+                "url": product.url,
+                "matched_on": entries,
+            }
+        )
+        speed_values.append(str(product.specs.get("抽速") or product.specs.get("pumping_speed") or "—"))
+        vacuum_values.append(str(product.specs.get("极限真空") or product.specs.get("ultimate_vacuum") or "—"))
+
+    rows: list[dict[str, Any]] = []
+    if criteria.pumping_speed_min is not None:
+        rows.append(
+            {
+                "label": f"抽速（需 ≥ {fmt_num(criteria.pumping_speed_min)} m³/h）",
+                "values": speed_values,
+                "ok": [True] * len(products),
+            }
+        )
+    if criteria.ultimate_vacuum_max is not None:
+        rows.append(
+            {
+                "label": f"极限真空（需 ≤ {fmt_num(criteria.ultimate_vacuum_max)} Pa）",
+                "values": vacuum_values,
+                "ok": [True] * len(products),
+            }
+        )
+    return {
+        "kind": "product_compare",
+        "title": "按您的规格条件对比",
+        "criteria_summary": criteria_summary,
+        "products": products,
+        "rows": rows,
+    }
+
+
+def _compare_matrix_payload(details: list[Any]) -> dict[str, Any]:
+    """点名两产品对比卡：复用 build_compare_matrix（中立并列，不判优劣）。"""
+    matrix = build_compare_matrix(details)
+    products = [
+        {
+            "name": p.name,
+            "supplier": p.supplier_name,
+            "price": p.price_display.text if p.price_display.mode == "shown" else "请联系供应商询价",
+            "url": p.url,
+        }
+        for p in details
+    ]
+    rows = [
+        {
+            "label": row.label,
+            "values": row.values,
+            **({"direction_hint": row.direction_hint} if row.direction_hint else {}),
+        }
+        for row in matrix.rows
+    ]
+    return {"kind": "product_compare", "title": "产品参数对比", "products": products, "rows": rows}
 
 
 def _merge_lists(left: list[Any] | None, right: list[Any] | None) -> list[Any]:
@@ -310,29 +390,15 @@ def _respond_node(deps: GraphDeps) -> Any:
                 answer = no_match_head + "\n" + close + "\n" + tail
             else:
                 # 文本只做引导（数据交给卡片，与 product_flow 同理念，杜绝文本复读卡片内容）；
-                # 卡片规格走 _humanize_spec_value 去尾零（曾出 "540.00 m³/h"/"0.0000 Pa"）。
-                for product, _score in matched[:3]:
-                    price_text = (
-                        product.price_display.text if product.price_display.mode == "shown" else "请联系供应商询价"
-                    )
-                    if product.price_display.mode == "shown":
-                        whitelist.add(product.price_display.text.strip())
+                # 产品卡统一走 _product_cards_payload（补 brand/category，消除双份构造），
+                # 末尾追加 product_compare 对比卡（03-api-spec v1.1）。
+                top_matched = matched[:3]
+                for product, _score, _entries in top_matched:
                     events.append(("citation", {"title": product.name, "trust": "merchant"}))
-                    events.append(
-                        (
-                            "card",
-                            {
-                                "kind": "product",
-                                "name": product.name,
-                                "supplier": product.supplier_name,
-                                "price": price_text,
-                                "url": product.url,
-                                "specs": {
-                                    key: _humanize_spec_value(value) for key, value in list(product.specs.items())[:3]
-                                },
-                            },
-                        )
-                    )
+                cards, _shown_count = _product_cards_payload([p for p, _s, _e in top_matched], whitelist)
+                for card in cards:
+                    events.append(("card", card))
+                events.append(("card", _product_compare_payload(top_matched, criteria)))
                 answer = (
                     f"根据您的规格需求，匹配到 {len(matched)} 款产品（已按匹配度排序，见下方卡片）。"
                     "想看某款的详细参数、对比机型，或直接发起询盘，告诉我即可。"
@@ -627,6 +693,7 @@ def _respond_node(deps: GraphDeps) -> Any:
                 )
                 if product.price_display.mode == "shown":
                     whitelist.add(product.price_display.text.strip())
+            events.append(("card", _compare_matrix_payload(details)))
             matrix = build_compare_matrix(details)
             answer = render_compare_answer(matrix)
 

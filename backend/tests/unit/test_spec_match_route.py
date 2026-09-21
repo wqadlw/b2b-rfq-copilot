@@ -71,7 +71,7 @@ async def test_spec_match_flow_reaches_respond_and_matches() -> None:
     assert "spec_match" in final["tool_calls"]
     assert "匹配到" in final["answer"] and "卡片" in final["answer"]
     # 新设计：产品数据交给卡片事件，文本不再复读产品名（数据/文本分层）
-    card_names = [payload["name"] for kind, payload in final["events"] if kind == "card"]
+    card_names = [payload.get("name") for kind, payload in final["events"] if kind == "card"]
     assert "demo 高速泵 120 型" in card_names
 
 
@@ -101,7 +101,7 @@ async def test_spec_match_flow_matches_real_demo_data() -> None:
     final = await graph.ainvoke({"session_id": "sm4", "message": "我需要抽速 10 m3/h 以上的泵"})
     assert "spec_match" in final["tool_calls"]
     assert "匹配到" in final["answer"] and "卡片" in final["answer"]
-    card_names = [payload["name"] for kind, payload in final["events"] if kind == "card"]
+    card_names = [payload.get("name") for kind, payload in final["events"] if kind == "card"]
     assert any("demo 设备" in name for name in card_names)
 
 
@@ -199,3 +199,22 @@ async def test_knowledge_retrieval_not_enriched_for_fresh_topic(monkeypatch) -> 
     await graph.ainvoke({"session_id": "d52", "message": "真空泵油雾分离器怎么换？"})
     assert captured
     assert captured[0] == "真空泵油雾分离器怎么换？"
+
+
+async def test_spec_match_flow_emits_product_compare_card() -> None:
+    deps, _ = make_deps(
+        scripted=[understanding("spec_inquiry", "spec_match_flow", entities={"pumping_speed": "10 m3/h"})]
+    )
+    deps.catalog = _ScriptedCatalog()
+    graph = build_graph(deps)
+    final = await graph.ainvoke({"session_id": "sm5", "message": "我需要抽速 10 m3/h 以上的泵"})
+    compare_cards = [p for k, p in final["events"] if k == "card" and p.get("kind") == "product_compare"]
+    assert len(compare_cards) == 1
+    card = compare_cards[0]
+    assert card["criteria_summary"] == ["抽速 ≥ 10 m³/h"]
+    assert card["products"], "对比卡必须带产品列"
+    assert all(p["matched_on"] for p in card["products"])  # matched_on 全 grounded 非空
+    assert card["rows"][0]["ok"] == [True] * len(card["products"])  # 硬条件排除语义 → 在榜全满足
+    # 与产品卡并存（既有产品卡不互替）
+    product_cards = [p for k, p in final["events"] if k == "card" and p.get("kind") == "product"]
+    assert product_cards

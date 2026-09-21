@@ -73,4 +73,29 @@ describe("toEntityCard — 审查 R1 回归防线", () => {
     expect(card.supplier).toBeUndefined();
     expect(card.metrics).toBeUndefined();
   });
+
+  it("对比卡：product_compare 载荷经守卫映射进 compare 字段", () => {
+    const card = toEntityCard({
+      kind: "product_compare",
+      title: "按您的规格条件对比",
+      criteria_summary: ["抽速 ≥ 10 m³/h"],
+      products: [
+        { name: "泵 A", supplier: "供应商 1", price: "¥1,000", url: "/products/a", matched_on: ["抽速 120 m³/h（需求 ≥ 10 m³/h）"] },
+        { name: "泵 B", price: "请联系供应商询价" },
+      ],
+      rows: [
+        { label: "抽速（需 ≥ 10 m³/h）", values: ["120 m³/h", "20 m³/h"], ok: [true, true] },
+        { label: "极限真空", values: ["0.5 Pa", "8 Pa"], direction_hint: "更低" },
+      ],
+    });
+    expect(card.compare).toBeDefined();
+    expect(card.compare?.criteria_summary).toEqual(["抽速 ≥ 10 m³/h"]);
+    expect(card.compare?.products[0]?.matched_on?.[0]).toContain("120 m³/h");
+    expect(card.compare?.rows[1]?.direction_hint).toBe("更低");
+  });
+
+  it("对比卡：载荷形状不符（缺 rows）→ compare 为 undefined（空态降级）", () => {
+    const card = toEntityCard({ kind: "product_compare", products: [] });
+    expect(card.compare).toBeUndefined();
+  });
 });

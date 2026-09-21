@@ -107,23 +107,33 @@ def _requirement_value(value: str | None) -> float | None:
     return float(match.group()) if match else None
 
 
+def fmt_num(value: float) -> str:
+    """数值 → 展示串（去尾零：300.0 → "300"），与 graph._humanize_spec_value 同口径。"""
+    text = f"{value:.4f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
 def match_products(
     products: list[ProductDetail] | list[ProductSummary],
     criteria: SpecCriteria,
-) -> list[tuple[ProductDetail | ProductSummary, float]]:
-    """按规格条件匹配产品，返回 (产品, 匹配分) 按分数降序。
+) -> list[tuple[ProductDetail | ProductSummary, float, list[str]]]:
+    """按规格条件匹配产品，返回 (产品, 匹配分, 匹配依据) 按分数降序。
 
     评分规则：
     - 满足所有硬条件 → 基础分 50
     - 每项规格优于用户要求 → +10（超出需求）
     - 恰好等于用户要求 → +5
     - 不满足硬条件 → 排除；关键参数**取不到也排除**（产品硬列表语义，QA-0033）
+
+    匹配依据（matched_on）为 grounded 文本：参数名 + 产品参数原文 + 需求口径，
+    全部由确定性判定生成（03-api-spec v1.1：禁止 LLM 生成推荐理由）。
     """
-    scored: list[tuple[ProductDetail | ProductSummary, float]] = []
+    scored: list[tuple[ProductDetail | ProductSummary, float, list[str]]] = []
     for product in products:
-        score = _score_product(product, criteria)
-        if score is not None:
-            scored.append((product, score))
+        outcome = _score_product(product, criteria)
+        if outcome is not None:
+            score, entries = outcome
+            scored.append((product, score, entries))
     scored.sort(key=lambda x: x[1], reverse=True)
     return scored
 
@@ -142,33 +152,44 @@ def _vacuum_ok(quantity: QuantityRange | None, maximum: float) -> bool | None:
     return quantity.low <= maximum
 
 
-def _score_product(product: ProductDetail | ProductSummary, criteria: SpecCriteria) -> float | None:
-    """对单个产品打分；不满足硬条件返回 None（排除）。"""
+def _score_product(product: ProductDetail | ProductSummary, criteria: SpecCriteria) -> tuple[float, list[str]] | None:
+    """对单个产品打分并产出匹配依据；不满足硬条件返回 None（排除）。
+
+    依据文本中的"实际值"取产品参数**原文**（grounded，不做二次加工），
+    "需求"口径由 criteria 数值格式化而来（基准单位已在 extract 阶段归一）。
+    """
     score = 50.0
+    entries: list[str] = []
     specs = product.specs
 
     if criteria.pumping_speed_min is not None:
-        speed = parse_quantity(specs.get("抽速") or specs.get("pumping_speed"))
+        raw = specs.get("抽速") or specs.get("pumping_speed")
+        speed = parse_quantity(raw)
         verdict = _speed_ok(speed, criteria.pumping_speed_min)
         if verdict is None or not verdict:
             return None  # 缺参数或换算后不满足 → 产品路径一律排除
         best = speed.high if speed else 0.0
         score += min(20, (best - criteria.pumping_speed_min) / max(criteria.pumping_speed_min, 1) * 10)
+        entries.append(f"抽速 {str(raw).strip()}（需求 ≥ {fmt_num(criteria.pumping_speed_min)} m³/h）")
 
     if criteria.ultimate_vacuum_max is not None:
-        vacuum = parse_quantity(specs.get("极限真空") or specs.get("ultimate_vacuum"))
+        raw = specs.get("极限真空") or specs.get("ultimate_vacuum")
+        vacuum = parse_quantity(raw)
         verdict = _vacuum_ok(vacuum, criteria.ultimate_vacuum_max)
         if verdict is None or not verdict:
             return None
         score += 10
+        entries.append(f"极限真空 {str(raw).strip()}（需求 ≤ {fmt_num(criteria.ultimate_vacuum_max)} Pa）")
 
     if criteria.oil_free is not None:
         params = getattr(product, "params", None)  # ProductSummary 无 params 字段
         if isinstance(params, dict) and criteria.oil_free and params.get("无油", "") != "是":
             return None
+        if criteria.oil_free:
+            entries.append("无油 ✓")
         # 无 params 属性（Summary）：oil_free 视为不可判定，跳过该条件继续评分
 
-    return score
+    return score, entries
 
 
 # ---------------------------------------------------------------------------
