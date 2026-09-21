@@ -7,6 +7,10 @@
 
 ### Added (2026-09-21)
 
+- **P1-4 收官：确认卡工况摘要**：`inquiry_confirm` 卡片 `draft` 新增可选 `specs` 字段
+  （`spec_summary` 摘要，03-api-spec v1.2），前端确认卡渲染「工况：…」行；规格摘要/实体
+  提取 helper 公共化到 `spec_matcher`（graph 与 sse_mapper 共用），`spec_summary` 无规格项
+  返回空串。
 - **P1-4 询盘工况带入**：spec_match 提取的规格跨轮累积（spec_context 随 checkpoint 持久化），
   询盘时合并进 draft.params（历史为底、当前轮优先）并在确认话术附工况摘要——先聊规格
   后询盘不再丢工况，供应商拿到的询盘单自带完整参数。询盘快捷路由（0-token 直达）补
