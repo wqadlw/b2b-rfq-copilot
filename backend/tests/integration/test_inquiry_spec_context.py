@@ -84,7 +84,7 @@ async def test_inquiry_without_specs_unchanged() -> None:
         {
             "session_id": "p14c",
             "message": "询盘 demo-p-001",
-            "contact": {"name": "王五", "phone": "13700000000"},
+            "contact": {"name": "王五", "phone": "13900000000"},
         },
         config,
     )
