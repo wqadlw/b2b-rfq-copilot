@@ -37,7 +37,13 @@ from rfq_copilot.core.prompts import PromptRegistry
 from rfq_copilot.core.rag.citation import validate_citations
 from rfq_copilot.core.rag.compare import build_compare_matrix, render_compare_answer
 from rfq_copilot.core.rag.pipeline import RAGPipeline
-from rfq_copilot.core.rag.spec_matcher import extract_spec_criteria, fmt_num, match_products
+from rfq_copilot.core.rag.spec_matcher import (
+    SPEC_ALIASES,
+    extract_spec_criteria,
+    fmt_num,
+    match_products,
+    scan_spec_entities,
+)
 from rfq_copilot.ports.errors import ConfigError, CopilotError
 from rfq_copilot.ports.industry_knowledge import CasesPort, SolutionsPort
 from rfq_copilot.ports.inquiry_sink import AiExtract, Contact, InquiryDraft, InquirySinkPort
@@ -225,6 +231,7 @@ class AgentState(TypedDict, total=False):
     answer: str
     events: Annotated[list[tuple[str, dict[str, Any]]], _merge_lists]
     tool_calls: Annotated[list[str], _merge_lists]
+    spec_context: dict[str, str]  # 跨轮规格累积（P1-4）：spec_match 提取，询盘时带入 params
 
 
 @dataclass
@@ -350,6 +357,30 @@ def _handoff_node(deps: GraphDeps) -> Any:
     return node
 
 
+_SPEC_PARAM_KEYS = ("pumping_speed", "ultimate_vacuum", "oil_free")
+_SPEC_PARAM_LABELS = {"pumping_speed": "抽速", "ultimate_vacuum": "极限真空", "oil_free": "无油"}
+
+
+def _spec_entities(entities: dict[str, Any]) -> dict[str, str]:
+    """提取可跨轮累积的规格实体（canonical 键，与 extract_spec_criteria 同映射口径）。
+
+    P1-4：spec_match 命中后写入 spec_context 随 checkpoint 持久化，后续询盘轮
+    由 _inquiry_node 合并进 draft.params——用户先聊规格后询盘，工况不再丢失。
+    """
+    out: dict[str, str] = {}
+    for key, value in entities.items():
+        canonical = SPEC_ALIASES.get(str(key).lower(), str(key).lower())
+        if canonical in _SPEC_PARAM_KEYS:
+            out[canonical] = str(value)
+    return out
+
+
+def _spec_summary(params: dict[str, Any]) -> str:
+    """把（合并后）参数中的规格项拼成确认话术用的工况摘要；无规格项返回空串。"""
+    bits = [f"{_SPEC_PARAM_LABELS[k]} {params[k]}" for k in _SPEC_PARAM_KEYS if k in params]
+    return "；".join(bits)
+
+
 def _respond_node(deps: GraphDeps) -> Any:
     async def node(state: AgentState) -> dict[str, Any]:
         route = state.get("route", "clarify")
@@ -358,6 +389,7 @@ def _respond_node(deps: GraphDeps) -> Any:
         tool_calls: list[str] = []
         whitelist: set[str] = set()
         tools = deps.tool_registry()
+        spec_ctx: dict[str, str] = dict(state.get("spec_context") or {})
 
         if route == "faq_answer":
             # QA-0011：FAQ 命中答案在 understand 节点已生成（0 token 直达），
@@ -383,6 +415,7 @@ def _respond_node(deps: GraphDeps) -> Any:
                 )
                 return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
             # 搜索所有产品后按规格过滤
+            spec_ctx.update(_spec_entities(state.get("understanding", {}).get("entities", {})))
             from rfq_copilot.ports.product_catalog import ProductSearchQuery as _PSQ
 
             search_fn = tools.get("search_products") or (deps.catalog.search if deps.catalog else None)
@@ -715,7 +748,13 @@ def _respond_node(deps: GraphDeps) -> Any:
             )
 
         answer, _ = filter_output(answer, frozenset(whitelist))
-        return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
+        return {
+            "route": route,
+            "answer": answer,
+            "events": events,
+            "tool_calls": tool_calls,
+            "spec_context": spec_ctx,
+        }
 
     return node
 
@@ -782,6 +821,9 @@ def _inquiry_node(deps: GraphDeps) -> Any:
             return {"route": "inquiry_flow", "answer": answer, "events": events}
 
         u = state.get("understanding", {})
+        # P1-4 询盘工况带入：历史轮 spec_context 为底、当前轮实体优先，先聊规格后询盘不丢工况
+        merged_params: dict[str, Any] = {**(state.get("spec_context") or {}), **(u.get("entities") or {})}
+        spec_bits = _spec_summary(merged_params)
         extract = AiExtract(
             intent=u.get("intent", "inquiry_flow"),
             confidence=float(u.get("confidence", 0.5)),
@@ -801,18 +843,19 @@ def _inquiry_node(deps: GraphDeps) -> Any:
             user_ref=state.get("user_ref"),
             product_id=state.get("product_id"),
             quantity=state.get("quantity"),
-            params=u.get("entities", {}),
+            params=merged_params,
             message=state.get("message", "")[:1000],
             contact=contact,
             lead_score=min(100, 40 + (10 if extract.lead_market_candidate else 0)),
             ai_extract=extract,
             idempotency_key=key,
         )
-        pending = {"confirm_id": key[:16], "draft_json": draft.model_dump_json()}
+        spec_note = f"工况：{spec_bits}。" if spec_bits else ""
         answer = (
             f"请您确认以下询盘信息：产品 {draft.product_id}，数量 {draft.quantity}，"
-            f"联系人 {contact.name}（{_mask(contact.phone)}）。确认无误请回复“确认提交”。"
+            f"联系人 {contact.name}（{_mask(contact.phone)}）。{spec_note}确认无误请回复“确认提交”。"
         )
+        pending = {"confirm_id": key[:16], "draft_json": draft.model_dump_json()}
         # Human-in-the-loop: pause execution; checkpoint persists state (thread_id = session_id).
         # Resume via Command(resume={"action": "confirm_inquiry"|"cancel_inquiry"}) re-enters here.
         approval = interrupt(pending)
@@ -850,6 +893,7 @@ def _inquiry_node(deps: GraphDeps) -> Any:
                                 "quantity": draft.quantity,
                                 "contact_name": contact.name,
                                 "contact_phone_masked": _mask(contact.phone),
+                                "specs": _spec_summary(draft.params),
                             },
                         },
                     )
@@ -1013,7 +1057,9 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
         return {
             "intent": "inquiry_flow",
             "confidence": 0.99,
-            "entities": {},
+            # P1-4：0-token 直达原样丢 entities，"改成抽速 500 m3/h，帮我发起询盘"
+            # 的同句规格会丢；确定性扫描兜住显式「关键词+数字+单位」表达
+            "entities": scan_spec_entities(message),
             "missing_fields": [],
             "route": "inquiry_flow",
             "needs_clarification": False,
