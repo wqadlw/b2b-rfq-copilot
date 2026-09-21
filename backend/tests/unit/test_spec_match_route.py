@@ -80,7 +80,7 @@ async def test_spec_match_flow_empty_entities_clarifies() -> None:
     graph = build_graph(deps)
     final = await graph.ainvoke({"session_id": "sm2", "message": "帮我匹配一台泵"})
     assert "spec_match" in final["tool_calls"]
-    assert "请告诉我您需要的规格参数" in final["answer"]
+    assert "三个关键参数" in final["answer"] and "选型向导" in final["answer"]  # 教育式追问（04-prompt-spec v1.1）
 
 
 async def test_spec_match_flow_no_match_falls_back_to_closest() -> None:
@@ -218,3 +218,20 @@ async def test_spec_match_flow_emits_product_compare_card() -> None:
     # 与产品卡并存（既有产品卡不互替）
     product_cards = [p for k, p in final["events"] if k == "card" and p.get("kind") == "product"]
     assert product_cards
+
+
+async def test_spec_match_flow_empty_entities_educational_followup() -> None:
+    """教育式追问：三要素讲解 + 每项示例格式 + 向导引导（04-prompt-spec v1.1）。"""
+    deps, _ = make_deps(scripted=[understanding("spec_inquiry", "spec_match_flow")])
+    graph = build_graph(deps)
+    final = await graph.ainvoke({"session_id": "sm6", "message": "我要选泵"})
+    assert final["route"] == "spec_match_flow"
+    answer = final["answer"]
+    # 三要素逐项带单位与示例格式
+    assert "抽速" in answer and "m³/h" in answer and "如：抽速 ≥ 300 m³/h" in answer
+    assert "极限真空" in answer and "Pa" in answer and "如：极限真空 ≤ 10 Pa" in answer
+    assert "无油" in answer
+    # 引导出口：向导表单 + 口语化描述
+    assert "选型向导" in answer and "用途" in answer
+    # 追问不开匹配：无产品搜索
+    assert "search_products" not in final["tool_calls"] and "spec_match" in final["tool_calls"]

@@ -371,7 +371,15 @@ def _respond_node(deps: GraphDeps) -> Any:
             events.append(("tool_call", {"tool": "spec_match", "status": "running"}))
             criteria = extract_spec_criteria(state.get("understanding", {}).get("entities", {}))
             if criteria.is_empty:
-                answer = "请告诉我您需要的规格参数，例如抽速、极限真空度等，我来帮您匹配。"
+                # 教育式追问（04-prompt-spec v1.1"规格匹配缺参"行）：讲三要素 + 示例格式
+                # + 向导引导；一次给全（选型字段强相关，拆多轮流失率高——显式例外）。
+                answer = (
+                    "选真空泵主要看三个关键参数，告诉我已知的部分即可：\n"
+                    "1. 抽速（单位 m³/h，部分厂商用 L/s）——决定抽气快慢，如：抽速 ≥ 300 m³/h\n"
+                    "2. 极限真空（单位 Pa，数值越低抽得越深）——如：极限真空 ≤ 10 Pa\n"
+                    "3. 是否无油——半导体、食品、实验室等工况通常要求无油机型\n"
+                    "也可以点输入框上方「选型」→「选型向导」填表单，或直接说用途（如：实验室小腔体抽真空），我来帮您匹配。"
+                )
                 return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
             # 搜索所有产品后按规格过滤
             from rfq_copilot.ports.product_catalog import ProductSearchQuery as _PSQ
