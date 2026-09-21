@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { AlertCircle, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, ClipboardList, ClipboardPen, Headphones, History, Layers, Loader2, MessagesSquare, MessageSquarePlus, Pencil, SlidersHorizontal, Sparkles, Square, X } from "lucide-react";
+import { AlertCircle, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, ClipboardList, ClipboardPen, FlaskConical, Headphones, History, Layers, Loader2, MessagesSquare, MessageSquarePlus, Pencil, SlidersHorizontal, Sparkles, Square, Wrench, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
 import {
@@ -141,7 +141,7 @@ export function ChatWidget({
   const [showWechatModal, setShowWechatModal] = useState(false);
   // 工具栏二级菜单："chat"（新对话/历史会话）、"select"（选型向导/应用方案）与 "inquiry"（创建/我的询盘）；
   // "chat-history" 为「历史会话」的二级列表。
-  const [openMenu, setOpenMenu] = useState<"chat" | "chat-history" | "select" | "inquiry" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"chat" | "chat-history" | "select" | "inquiry" | "service" | null>(null);
   const [conversations, setConversations] = useState<SavedConversation[]>([]);
 
   // 生产态游客登录引导：用户可关闭（会话内不再出现）
@@ -865,6 +865,34 @@ export function ChatWidget({
                   </button>
                 </>
               )}
+              {openMenu === "service" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      quickAsk("有哪些真空设备维修保养服务？");
+                    }}
+                    disabled={busy}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
+                  >
+                    <Wrench className="h-3.5 w-3.5 text-ink-muted" />
+                    维修保养
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      quickAsk("有哪些真空检测服务？");
+                    }}
+                    disabled={busy}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
+                  >
+                    <FlaskConical className="h-3.5 w-3.5 text-ink-muted" />
+                    检测服务
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
@@ -896,6 +924,15 @@ export function ChatWidget({
           >
             <ClipboardList className="h-3.5 w-3.5" />
             询盘
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpenMenu(openMenu === "service" ? null : "service")}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+          >
+            <Wrench className="h-3.5 w-3.5" />
+            服务
             <ChevronDown className="h-3 w-3" />
           </button>
           <span className="flex-1" />
