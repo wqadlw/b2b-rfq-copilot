@@ -9,6 +9,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { AlertCircle, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, ClipboardList, ClipboardPen, FlaskConical, History, Layers, Loader2, MessageSquarePlus, Pencil, SlidersHorizontal, Sparkles, Square, Wrench, X } from "lucide-react";
 import { Button } from "../ui/button";
@@ -741,199 +742,212 @@ export function ChatWidget({
       )}
       {/* Input：容器式 composer（企业级契约：容器承担边框+焦点态，按钮排容器内部不压字；busy 同槽变停止钮） */}
       <form onSubmit={onSubmit} className="relative border-t border-line bg-surface py-2 px-3">
-        {/* 二级菜单面板（工具栏上方弹出；fixed 透明遮罩点击关闭） */}
+        {/* 二级菜单面板（锚定触发按钮上方弹出；fixed 透明遮罩点击关闭） */}
         {openMenu !== null && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setOpenMenu(null)} aria-hidden="true" />
-            <div className={`absolute bottom-full left-3 z-50 mb-2 rounded-xl border border-line bg-surface p-1 shadow-lg "w-60"`}>
-              {openMenu === "chat" && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      void startNewChat();
-                    }}
-                    disabled={busy}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    <MessageSquarePlus className="h-3.5 w-3.5 text-ink-muted" />
-                    新对话
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openHistoryMenu}
-                    disabled={busy}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    <span className="flex items-center gap-2">
-                      <History className="h-3.5 w-3.5 text-ink-muted" />
-                      历史会话
-                    </span>
-                    <ChevronRight className="h-3.5 w-3.5 text-ink-muted" />
-                  </button>
-                </>
-              )}
-              {openMenu === "chat-history" && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setOpenMenu("chat")}
-                    className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left text-[11px] text-ink-muted transition-colors hover:bg-muted hover:text-ink"
-                  >
-                    <ChevronLeft className="h-3 w-3" />
-                    返回
-                  </button>
-                  <div className="max-h-56 overflow-y-auto">
-                    {conversations.length === 0 ? (
-                      <p className="px-3 py-3 text-xs text-ink-muted">暂无历史会话——点「新对话」后当前会话会自动存档到这里</p>
-                    ) : (
-                      conversations.map((item, index) => (
-                        <button
-                          key={`${item.savedAt}-${index}`}
-                          type="button"
-                          onClick={() => restoreConversation(item)}
-                          disabled={busy}
-                          className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                        >
-                          <span className="truncate">{item.title}</span>
-                          <span className="shrink-0 text-[11px] text-ink-muted">{formatConversationTime(item.savedAt)}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </>
-              )}
-              {openMenu === "select" && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      if (busy) return;
-                      setMessages((prev) => [
-                        ...prev,
-                        { role: "assistant", content: "好的，请在下方表单填写工况，我来帮您匹配产品：", selectionForm: {} },
-                      ]);
-                      stickToBottom.current = true;
-                    }}
-                    disabled={busy}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    <span className="flex items-center gap-2">
-                      <SlidersHorizontal className="h-3.5 w-3.5 text-ink-muted" />
-                      选型向导
-                    </span>
-                    <ChevronRight className="h-3.5 w-3.5 text-ink-muted" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      quickAsk("有哪些真空应用解决方案？");
-                    }}
-                    disabled={busy}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    <Layers className="h-3.5 w-3.5 text-ink-muted" />
-                    应用方案
-                  </button>
-                </>
-              )}
-              {openMenu === "inquiry" && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      quickAsk("帮我创建询盘");
-                    }}
-                    disabled={busy}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    <ClipboardPen className="h-3.5 w-3.5 text-ink-muted" />
-                    创建询盘
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      quickAsk("我的询盘有人跟吗");
-                    }}
-                    disabled={busy}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    <ClipboardList className="h-3.5 w-3.5 text-ink-muted" />
-                    我的询盘
-                  </button>
-                </>
-              )}
-              {openMenu === "service" && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      quickAsk("有哪些真空设备维修保养服务？");
-                    }}
-                    disabled={busy}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    <Wrench className="h-3.5 w-3.5 text-ink-muted" />
-                    维修保养
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      quickAsk("有哪些真空检测服务？");
-                    }}
-                    disabled={busy}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-ink transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    <FlaskConical className="h-3.5 w-3.5 text-ink-muted" />
-                    检测服务
-                  </button>
-                </>
-              )}
-            </div>
-          </>
+          <div className="fixed inset-0 z-40" onClick={() => setOpenMenu(null)} aria-hidden="true" />
         )}
-        {/* 工具栏（常驻，不随消息滚动）：「对话」「询盘」二级菜单 + 转人工——
-            转人工自滚动 header 迁入此排：滚到哪都能一键触达（CS-1.5 主路径可达性） */}
+        {/* 工具栏（常驻，不随消息滚动）：对话/选型/询盘/服务二级菜单 + 转人工——
+            菜单锚定各自按钮（relative wrapper 自下而上轻浮出），转人工保持橙色对比 */}
         <div className="mb-1.5 flex items-center gap-1 px-1">
-          <button
-            type="button"
-            onClick={() => setOpenMenu(openMenu === "chat" ? null : "chat")}
-            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
-          >
-            对话
-            <ChevronDown className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setOpenMenu(openMenu === "select" ? null : "select")}
-            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
-          >
-            选型
-            <ChevronDown className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setOpenMenu(openMenu === "inquiry" ? null : "inquiry")}
-            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
-          >
-            询盘
-            <ChevronDown className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setOpenMenu(openMenu === "service" ? null : "service")}
-            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
-          >
-            服务
-            <ChevronDown className="h-3 w-3" />
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenMenu(openMenu === "chat" ? null : "chat")}
+              aria-expanded={openMenu === "chat" || openMenu === "chat-history"}
+              className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
+            >
+              对话
+              <ChevronDown
+                className={`h-3 w-3 transition-transform ${openMenu === "chat" || openMenu === "chat-history" ? "rotate-180" : ""}`}
+              />
+            </button>
+            {(openMenu === "chat" || openMenu === "chat-history") && (
+              <MenuShell>
+                {openMenu === "chat" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenMenu(null);
+                        void startNewChat();
+                      }}
+                      disabled={busy}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink-secondary transition-colors hover:bg-primary-light/60 hover:text-ink disabled:opacity-50"
+                    >
+                      <MessageSquarePlus className="h-3.5 w-3.5 text-primary/70" />
+                      新对话
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openHistoryMenu}
+                      disabled={busy}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink-secondary transition-colors hover:bg-primary-light/60 hover:text-ink disabled:opacity-50"
+                    >
+                      <span className="flex items-center gap-2">
+                        <History className="h-3.5 w-3.5 text-primary/70" />
+                        历史会话
+                      </span>
+                      <ChevronRight className="h-3.5 w-3.5 text-ink-muted" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setOpenMenu("chat")}
+                      className="mb-1 flex w-full items-center gap-1 rounded-lg px-2.5 py-1.5 text-left text-[11px] text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+                    >
+                      <ChevronLeft className="h-3 w-3" />
+                      返回
+                    </button>
+                    <div className="max-h-56 overflow-y-auto">
+                      {conversations.length === 0 ? (
+                        <p className="px-2.5 py-3 text-xs text-ink-muted">暂无历史会话——点「新对话」后当前会话会自动存档到这里</p>
+                      ) : (
+                        conversations.map((item, index) => (
+                          <button
+                            key={`${item.savedAt}-${index}`}
+                            type="button"
+                            onClick={() => restoreConversation(item)}
+                            disabled={busy}
+                            className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink-secondary transition-colors hover:bg-primary-light/60 hover:text-ink disabled:opacity-50"
+                          >
+                            <span className="truncate">{item.title}</span>
+                            <span className="shrink-0 text-[11px] text-ink-muted">{formatConversationTime(item.savedAt)}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+              </MenuShell>
+            )}
+          </div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenMenu(openMenu === "select" ? null : "select")}
+              aria-expanded={openMenu === "select"}
+              className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
+            >
+              选型
+              <ChevronDown className={`h-3 w-3 transition-transform ${openMenu === "select" ? "rotate-180" : ""}`} />
+            </button>
+            {openMenu === "select" && (
+              <MenuShell>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenu(null);
+                    if (busy) return;
+                    setMessages((prev) => [
+                      ...prev,
+                      { role: "assistant", content: "好的，请在下方表单填写工况，我来帮您匹配产品：", selectionForm: {} },
+                    ]);
+                    stickToBottom.current = true;
+                  }}
+                  disabled={busy}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink-secondary transition-colors hover:bg-primary-light/60 hover:text-ink disabled:opacity-50"
+                >
+                  <span className="flex items-center gap-2">
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-primary/70" />
+                    选型向导
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 text-ink-muted" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenu(null);
+                    quickAsk("有哪些真空应用解决方案？");
+                  }}
+                  disabled={busy}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink-secondary transition-colors hover:bg-primary-light/60 hover:text-ink disabled:opacity-50"
+                >
+                  <Layers className="h-3.5 w-3.5 text-primary/70" />
+                  应用方案
+                </button>
+              </MenuShell>
+            )}
+          </div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenMenu(openMenu === "inquiry" ? null : "inquiry")}
+              aria-expanded={openMenu === "inquiry"}
+              className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
+            >
+              询盘
+              <ChevronDown className={`h-3 w-3 transition-transform ${openMenu === "inquiry" ? "rotate-180" : ""}`} />
+            </button>
+            {openMenu === "inquiry" && (
+              <MenuShell>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenu(null);
+                    quickAsk("帮我创建询盘");
+                  }}
+                  disabled={busy}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink-secondary transition-colors hover:bg-primary-light/60 hover:text-ink disabled:opacity-50"
+                >
+                  <ClipboardPen className="h-3.5 w-3.5 text-primary/70" />
+                  创建询盘
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenu(null);
+                    quickAsk("我的询盘有人跟吗");
+                  }}
+                  disabled={busy}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink-secondary transition-colors hover:bg-primary-light/60 hover:text-ink disabled:opacity-50"
+                >
+                  <ClipboardList className="h-3.5 w-3.5 text-primary/70" />
+                  我的询盘
+                </button>
+              </MenuShell>
+            )}
+          </div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenMenu(openMenu === "service" ? null : "service")}
+              aria-expanded={openMenu === "service"}
+              className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
+            >
+              服务
+              <ChevronDown className={`h-3 w-3 transition-transform ${openMenu === "service" ? "rotate-180" : ""}`} />
+            </button>
+            {openMenu === "service" && (
+              <MenuShell>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenu(null);
+                    quickAsk("有哪些真空设备维修保养服务？");
+                  }}
+                  disabled={busy}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink-secondary transition-colors hover:bg-primary-light/60 hover:text-ink disabled:opacity-50"
+                >
+                  <Wrench className="h-3.5 w-3.5 text-primary/70" />
+                  维修保养
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenu(null);
+                    quickAsk("有哪些真空检测服务？");
+                  }}
+                  disabled={busy}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink-secondary transition-colors hover:bg-primary-light/60 hover:text-ink disabled:opacity-50"
+                >
+                  <FlaskConical className="h-3.5 w-3.5 text-primary/70" />
+                  检测服务
+                </button>
+              </MenuShell>
+            )}
+          </div>
           <span className="flex-1" />
           <button
             type="button"
@@ -978,6 +992,15 @@ export function ChatWidget({
           )}
         </div>
       </form>
+    </div>
+  );
+}
+
+/** MenuShell — composer 工具栏二级菜单外壳：锚定触发按钮正上方，自下而上轻浮出。 */
+function MenuShell({ children }: { children: ReactNode }): ReactElement {
+  return (
+    <div className="rfq-menu-in absolute bottom-full left-0 z-50 mb-2 w-56 rounded-xl border border-line bg-surface p-1.5 shadow-lg">
+      {children}
     </div>
   );
 }
