@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { AlertCircle, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, ClipboardList, ClipboardPen, FlaskConical, Headphones, History, Layers, Loader2, MessagesSquare, MessageSquarePlus, Pencil, SlidersHorizontal, Sparkles, Square, Wrench, X } from "lucide-react";
+import { AlertCircle, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, ClipboardList, ClipboardPen, FlaskConical, History, Layers, Loader2, MessageSquarePlus, Pencil, SlidersHorizontal, Sparkles, Square, Wrench, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { CitationCard } from "./CitationCard";
 import {
@@ -905,36 +905,32 @@ export function ChatWidget({
           <button
             type="button"
             onClick={() => setOpenMenu(openMenu === "chat" ? null : "chat")}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
           >
-            <MessagesSquare className="h-3.5 w-3.5" />
             对话
             <ChevronDown className="h-3 w-3" />
           </button>
           <button
             type="button"
             onClick={() => setOpenMenu(openMenu === "select" ? null : "select")}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
           >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
             选型
             <ChevronDown className="h-3 w-3" />
           </button>
           <button
             type="button"
             onClick={() => setOpenMenu(openMenu === "inquiry" ? null : "inquiry")}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
           >
-            <ClipboardList className="h-3.5 w-3.5" />
             询盘
             <ChevronDown className="h-3 w-3" />
           </button>
           <button
             type="button"
             onClick={() => setOpenMenu(openMenu === "service" ? null : "service")}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-muted hover:text-ink"
+            className="flex items-center gap-1 rounded-md bg-primary-light px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-light/70 hover:text-primary-hover"
           >
-            <Wrench className="h-3.5 w-3.5" />
             服务
             <ChevronDown className="h-3 w-3" />
           </button>
@@ -944,7 +940,6 @@ export function ChatWidget({
             onClick={() => setShowWechatModal(true)}
             className="flex items-center gap-1 rounded-md border border-orange-200 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-600 transition-colors hover:border-orange-300 hover:bg-orange-100"
           >
-            <Headphones className="h-3.5 w-3.5" />
             转人工
           </button>
         </div>
