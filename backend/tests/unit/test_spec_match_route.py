@@ -287,3 +287,58 @@ async def test_compare_flow_accepts_numeric_product_ids() -> None:
     assert [p["name"] for p in card["products"]] == ["demo 分子泵机组 312", "demo 罗茨机组 180"]
     assert any(row["label"] == "抽速" for row in card["rows"])
     assert "参数对比" in final["answer"]
+
+
+# ---------------------------------------------------------------------------
+# P1-3 机组组合建议：高真空/大抽速工况 → RAG 摘录（grounded，不生成）
+# ---------------------------------------------------------------------------
+
+from rfq_copilot.core.rag.chunking import Chunk  # noqa: E402
+
+
+class _StubRag:
+    """最小 RAG 桩：记录检索词，固定返回一条平台级选型指南块。"""
+
+    def __init__(self) -> None:
+        self.last_query = ""
+
+    async def search(self, query: str, top_k: int = 5, spec=None):
+        self.last_query = query
+        return [
+            Chunk(
+                doc_id="offline-solutions-1",
+                chunk_index=0,
+                title="高真空机组选型指南",
+                content="高真空工况通常需要罗茨泵搭配前级泵组成机组，罗茨泵不能直接排气，需按前级抽速配比选择。",
+                trust_level="platform",
+            )
+        ]
+
+
+async def test_spec_match_high_vacuum_appends_system_suggestion() -> None:
+    deps, _ = make_deps(
+        scripted=[understanding("spec_inquiry", "spec_match_flow", entities={"ultimate_vacuum": "0.5 Pa"})]
+    )
+    deps.catalog = _ScriptedCatalog()
+    rag = _StubRag()
+    deps.rag = rag
+    graph = build_graph(deps)
+    final = await graph.ainvoke({"session_id": "sg1", "message": "我需要极限真空 0.5 Pa 的泵"})
+    assert "search_knowledge" in final["tool_calls"]
+    assert "系统建议" in final["answer"] and "罗茨" in final["answer"]
+    assert "以供应商方案为准" in final["answer"]  # 中立免责句
+    assert any(p.get("title") == "高真空机组选型指南" for k, p in final["events"] if k == "citation")
+    assert "高真空" in rag.last_query  # 检索词随工况聚焦
+
+
+async def test_spec_match_normal_spec_no_suggestion() -> None:
+    deps, _ = make_deps(
+        scripted=[understanding("spec_inquiry", "spec_match_flow", entities={"pumping_speed": "100 m3/h"})]
+    )
+    deps.catalog = _ScriptedCatalog()
+    rag = _StubRag()
+    deps.rag = rag
+    graph = build_graph(deps)
+    final = await graph.ainvoke({"session_id": "sg2", "message": "我需要抽速 100 m3/h 以上的泵"})
+    assert "search_knowledge" not in final["tool_calls"]  # 非高真空/大抽速 → 不触发
+    assert "系统建议" not in final["answer"]

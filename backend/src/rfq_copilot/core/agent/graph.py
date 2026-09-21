@@ -397,6 +397,7 @@ def _respond_node(deps: GraphDeps) -> Any:
                 tail = "您可以提交询盘，供应商会推荐接近的型号。"
                 close = "\n".join(f"- {p.name}（{p.supplier_name}）" for p in result.items[:3])
                 answer = no_match_head + "\n" + close + "\n" + tail
+                answer += await _vacuum_system_suggestion(deps.rag, criteria, tool_calls, events)
             else:
                 # 文本只做引导（数据交给卡片，与 product_flow 同理念，杜绝文本复读卡片内容）；
                 # 产品卡统一走 _product_cards_payload（补 brand/category，消除双份构造），
@@ -412,6 +413,7 @@ def _respond_node(deps: GraphDeps) -> Any:
                     f"根据您的规格需求，匹配到 {len(matched)} 款产品（已按匹配度排序，见下方卡片）。"
                     "想看某款的详细参数、对比机型，或直接发起询盘，告诉我即可。"
                 )
+                answer += await _vacuum_system_suggestion(deps.rag, criteria, tool_calls, events)
         elif route == "solution_flow" and deps.solutions is not None:
             tool_calls.append("get_solution")
             events.append(("tool_call", {"tool": "get_solution", "status": "running"}))
@@ -716,6 +718,37 @@ def _respond_node(deps: GraphDeps) -> Any:
         return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
 
     return node
+
+
+async def _vacuum_system_suggestion(
+    rag: Any, criteria: Any, tool_calls: list[str], events: list[tuple[str, dict[str, Any]]]
+) -> str:
+    """机组组合建议（P1-3）：高真空/大抽速工况 → RAG 检索选型指南，**摘录不生成**。
+
+    触发阈值（领域启发式，与 spec_matcher 方向表同源）：极限真空 ≤ 10 Pa（高真空，
+    罗茨+前级机组典型区间）或抽速 ≥ 500 m³/h（大抽速，需前级搭配）。摘录带上限
+    160 字并附引用事件；rag 无召回/端口异常返回空串静默跳过，不阻塞匹配主流程。
+    """
+    high_vacuum = criteria.ultimate_vacuum_max is not None and criteria.ultimate_vacuum_max <= 10
+    large_speed = criteria.pumping_speed_min is not None and criteria.pumping_speed_min >= 500
+    if not (high_vacuum or large_speed):
+        return ""
+    tool_calls.append("search_knowledge")
+    events.append(("tool_call", {"tool": "search_knowledge", "status": "running"}))
+    focus = "高真空" if high_vacuum else "大抽速"
+    try:
+        chunks = await rag.search(f"{focus} 机组 罗茨泵 前级泵 搭配 选型", top_k=2)
+    except CopilotError as exc:
+        logger.warning("suggestion.retrieve.failed", error=str(exc))
+        chunks = []
+    finally:
+        events.append(("tool_call", {"tool": "search_knowledge", "status": "done"}))
+    if not chunks:
+        return ""
+    top = chunks[0]
+    events.append(("citation", {"title": top.title, "trust": top.trust_level}))
+    snippet = " ".join(top.content.split())[:160]
+    return f"\n\n系统建议（{focus}工况）：{snippet}……\n（摘自站内资料「{top.title}」；具体机组配置以供应商方案为准。）"
 
 
 def _inquiry_node(deps: GraphDeps) -> Any:

@@ -7,6 +7,9 @@
 
 ### Added (2026-09-21)
 
+- **P1-3 机组组合建议**：`spec_match_flow` 命中高真空（极限真空 ≤ 10 Pa）或大抽速
+  （≥ 500 m³/h）工况时，RAG 检索选型指南并**摘录**（≤160 字）一段"系统建议"追加到答案，
+  附 citation 引用与 search_knowledge 工具轨迹；摘录不生成（grounded），rag 无召回静默跳过。
 - **`product_compare` 对比卡（03-api-spec v1.1）**：`card` 事件新增 `kind: "product_compare"`
   载荷（criteria_summary / products[].matched_on / rows[].ok+direction_hint），
   由 `spec_match_flow`（按用户规格条件对比）与 `compare_flow`（点名两产品矩阵）
