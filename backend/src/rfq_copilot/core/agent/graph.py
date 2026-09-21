@@ -21,6 +21,7 @@ from rfq_copilot.core.agent.routing_guards import (
     INQUIRY_CREATE_MARKERS,
     PRODUCT_ID_PATTERN,
     SCENARIO_MARKERS,
+    SPEC_ROUTE_GUARDS,
     apply_routing_guards,
     apply_scenario_followup_guard,
     apply_selection_guard,
@@ -1044,6 +1045,27 @@ def _understanding_from_tools(state: AgentState, deps: GraphDeps) -> dict[str, A
             "human_reason": None,
             "refusal_reason": None,
         }
+    # 规格意图确定性路由（P1-5）：显式「关键词+数字（+单位）」规格 + 非问询/商务守卫词
+    # → 0-token 直达 spec_match_flow。LLM 理解对 "抽速 300 m3/h 的泵" 有方差（偶落澄清），
+    # 确定性路由既省 token 又稳定。守卫词防误路由：概念问句（是什么/怎么/区别…）与
+    # 商务问句（价格/货期/售后/厂家…）交还 LLM——refusal/selection/compare 语义更准。
+    # 仅数值型规格（抽速/极限真空）触发；仅无油（无数值）不触发，保持 LLM 对选型咨询的判别。
+    if deps.rag is not None and message.strip():
+        scanned = scan_spec_entities(message)
+        numeric_spec = any(k in scanned for k in ("pumping_speed", "ultimate_vacuum"))
+        guarded = any(g in message for g in SPEC_ROUTE_GUARDS)
+        if numeric_spec and not guarded:
+            return {
+                "intent": "spec_inquiry",
+                "confidence": 0.95,
+                "entities": scanned,
+                "missing_fields": [],
+                "route": "spec_match_flow",
+                "needs_clarification": False,
+                "needs_human": False,
+                "human_reason": None,
+                "refusal_reason": None,
+            }
     if message.strip() in {"", "嗯", "好的"} and state.get("action") is None:
         return {
             "intent": "unknown",

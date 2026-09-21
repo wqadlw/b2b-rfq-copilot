@@ -110,7 +110,7 @@ async def test_multi_turn_memory_accumulates_history() -> None:
     deps, _ = make_deps(scripted=scripted)
     graph = build_graph(deps)
     await graph.ainvoke({"session_id": "s7", "message": "找无油泵"}, {"configurable": {"thread_id": "x"}})
-    await graph.ainvoke({"session_id": "s7", "message": "抽速 100 的"}, {"configurable": {"thread_id": "x"}})
+    await graph.ainvoke({"session_id": "s7", "message": "再看看干式螺杆泵"}, {"configurable": {"thread_id": "x"}})
     assert len(deps.store.messages("s7")) == 2  # 用户侧消息由 understand 节点落库；助手侧在 mapper
     assert len(deps.llm.calls) == 2
     second_prompt = deps.llm.calls[1][1]
@@ -149,3 +149,37 @@ async def test_handoff_event_emitted() -> None:
     graph = build_graph(deps)
     final = await graph.ainvoke({"session_id": "s8", "message": "我要投诉！"})
     assert ("handoff", {"reason": "complaint", "priority": "high"}) in final["events"]
+
+
+async def test_deterministic_spec_route_bypasses_llm() -> None:
+    """P1-5：显式数值规格 0-token 直达 spec_match_flow，LLM 方差不再漏路由。"""
+    deps, _ = make_deps(scripted=[understanding("product_inquiry", "product_flow")])
+    graph = build_graph(deps)
+    final = await graph.ainvoke({"session_id": "p15a", "message": "我需要抽速 300 m3/h 的泵"})
+    assert final["route"] == "spec_match_flow"
+    assert len(deps.llm.calls) == 0  # 0 token
+    assert "spec_match" in final["tool_calls"]
+
+
+async def test_deterministic_spec_route_guarded_by_question_words() -> None:
+    """概念/比较/商务问句不得被规格路由截走：价格问句走确定性价格拒绝（0 token 更优）。"""
+    deps, _ = make_deps(scripted=[understanding("price_inquiry", "refuse_fabrication", refusal_reason="pricing")])
+    graph = build_graph(deps)
+    final = await graph.ainvoke({"session_id": "p15b", "message": "抽速 300 的泵多少钱？"})
+    assert final["route"] == "refuse_fabrication"  # 确定性价格拒绝，规格路由未截胡
+    assert len(deps.llm.calls) == 0
+    # 非拒绝类的比较问句则交还 LLM
+    deps2, _ = make_deps(scripted=[understanding("product_inquiry", "product_flow")])
+    graph2 = build_graph(deps2)
+    final2 = await graph2.ainvoke({"session_id": "p15b2", "message": "抽速 300 和 500 的泵哪个好"})
+    assert final2["route"] != "spec_match_flow"
+    assert len(deps2.llm.calls) == 1
+
+
+async def test_deterministic_spec_route_skipped_when_scan_ambiguous() -> None:
+    """科学计数/区间等歧义表达扫描为空 → 交还 LLM。"""
+    deps, _ = make_deps(scripted=[understanding("selection_inquiry", "selection_flow")])
+    graph = build_graph(deps)
+    final = await graph.ainvoke({"session_id": "p15c", "message": "真空度 1×10⁻³ Pa 的泵"})
+    assert final["route"] != "spec_match_flow"
+    assert len(deps.llm.calls) == 1
