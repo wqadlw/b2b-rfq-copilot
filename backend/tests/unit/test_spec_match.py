@@ -73,8 +73,8 @@ def test_match_ranks_by_score_desc() -> None:
     slower = _detail("10 m³/h", pid="demo-p-001")
     faster = _detail("20 m³/h", pid="demo-p-002")
     matched = match_products([slower, faster], extract_spec_criteria({"抽速": "5 m3/h"}))
-    assert [p.id for p, _ in matched] == ["demo-p-002", "demo-p-001"]  # 分数降序
-    assert [score for _, score in matched] == [70.0, 60.0]  # 50 基础 + 超出需求加分
+    assert [p.id for p, _s, _e in matched] == ["demo-p-002", "demo-p-001"]  # 分数降序
+    assert [score for _, score, _e in matched] == [70.0, 60.0]  # 50 基础 + 超出需求加分
 
 
 def test_match_excludes_speed_below_min() -> None:
@@ -91,7 +91,7 @@ def test_match_excludes_vacuum_above_max() -> None:
     worse = _detail("20 m³/h", vacuum="0.1 Pa", pid="demo-p-001")
     better = _detail("20 m³/h", vacuum="0.01 Pa", pid="demo-p-002")
     matched = match_products([worse, better], extract_spec_criteria({"极限真空": "0.05 Pa"}))
-    assert [p.id for p, _ in matched] == ["demo-p-002"]
+    assert [p.id for p, _s, _e in matched] == ["demo-p-002"]
     assert matched[0][1] == 60.0  # 基础 50 + 极限真空达标 10
 
 
@@ -99,7 +99,7 @@ def test_match_oil_free_filters_product_detail() -> None:
     oilless = _detail("20 m³/h", oil_free="是", pid="demo-p-002")
     oiled = _detail("20 m³/h", oil_free="否", pid="demo-p-001")
     matched = match_products([oilless, oiled], extract_spec_criteria({"无油": "是"}))
-    assert [p.id for p, _ in matched] == ["demo-p-002"]
+    assert [p.id for p, _s, _e in matched] == ["demo-p-002"]
 
 
 def test_match_summary_without_params_skips_oil_free() -> None:
@@ -108,3 +108,26 @@ def test_match_summary_without_params_skips_oil_free() -> None:
     matched = match_products([summary], extract_spec_criteria({"抽速": "100 m3/h", "无油": "是"}))
     assert len(matched) == 1
     assert matched[0][0] is summary  # oil_free 不可判定 → 跳过该条件继续评分，不抛异常
+
+
+# ---------------------------------------------------------------------------
+# product_compare（03-api-spec v1.1）：matched_on grounded 匹配依据
+# ---------------------------------------------------------------------------
+
+
+def test_match_entries_ground_in_product_spec_text() -> None:
+    product = _detail("100-1000 m³/h", pid="demo-p-001")
+    matched = match_products([product], extract_spec_criteria({"抽速": "300 m3/h"}))
+    entries = matched[0][2]
+    assert entries == ["抽速 100-1000 m³/h（需求 ≥ 300 m³/h）"]  # 实际值=参数原文，需求=归一化口径
+
+
+def test_match_entries_vacuum_and_oil_free() -> None:
+    product = _detail("20 m³/h", vacuum="0.01 Pa", oil_free="是", pid="demo-p-001")
+    matched = match_products(
+        [product],
+        extract_spec_criteria({"极限真空": "0.05 Pa", "无油": "是"}),
+    )
+    entries = matched[0][2]
+    assert "极限真空 0.01 Pa（需求 ≤ 0.05 Pa）" in entries
+    assert "无油 ✓" in entries

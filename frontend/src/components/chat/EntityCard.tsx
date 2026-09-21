@@ -299,3 +299,93 @@ export function SupplierCard({ card }: { card: EntityCardData }): ReactElement {
     </div>
   );
 }
+
+/** ComparisonCard — 规格对比卡（行=参数条件，列=产品，满足高亮）。
+ *  03-api-spec v1.1 product_compare 载荷；延用 compare.py 中立纪律：
+ *  只客观并列与方向提示（direction_hint），不判优劣、不出推荐结论。 */
+export function ComparisonCard({ card }: { card: EntityCardData }): ReactElement {
+  const compare = card.compare;
+  if (!compare || compare.products.length === 0 || compare.rows.length === 0) {
+    return (
+      <div className="rfq-fade-in w-full max-w-[92%] self-start rounded-xl border border-line bg-surface p-3 text-[12px] text-ink-muted">
+        对比数据暂不可用，可提交询盘由供应商出详细参数。
+      </div>
+    );
+  }
+  const products = compare.products.slice(0, 3);
+  const colWidth = products.length === 1 ? "w-1/2" : products.length === 2 ? "w-1/3" : "w-1/4";
+  return (
+    <div className="rfq-fade-in w-full max-w-[92%] self-start overflow-hidden rounded-xl border border-primary/25 bg-surface transition-all hover:-translate-y-px hover:shadow-sm">
+      <div className="flex items-center gap-2 bg-primary-light/50 px-2.5 py-2">
+        <p className="text-[12px] font-semibold text-ink">{card.title ?? "按您的规格条件对比"}</p>
+        {(compare.criteria_summary ?? []).length > 0 && (
+          <span className="ml-auto flex min-w-0 flex-wrap justify-end gap-1">
+            {compare.criteria_summary!.slice(0, 3).map((c) => (
+              <span key={c} className="rounded bg-surface px-1.5 py-px text-[10px] text-primary ring-1 ring-primary/20">
+                {c}
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
+      <div className="overflow-x-auto px-2.5 py-2">
+        <table className="w-full border-collapse text-left">
+          <thead>
+            <tr>
+              <th className="w-2/5 pb-1 pr-2 text-[10px] font-medium text-ink-muted" aria-hidden />
+              {products.map((p, i) => (
+                <th key={i} className={cn("pb-1 pr-2 align-bottom", colWidth)}>
+                  <span className="line-clamp-2 text-[11px] font-semibold leading-snug text-ink" title={p.name}>
+                    {p.name}
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {compare.rows.slice(0, 6).map((row, r) => (
+              <tr key={r} className="border-t border-line/60">
+                <td className="py-1.5 pr-2 align-top text-[10.5px] leading-snug text-ink-secondary">{row.label}</td>
+                {row.values.slice(0, 3).map((v, i) => {
+                  const ok = row.ok?.[i];
+                  return (
+                    <td key={i} className="py-1.5 pr-2 align-top">
+                      <span className={cn("mono line-clamp-1 text-[11px]", ok ? "font-semibold text-primary" : "text-ink-secondary")} title={v}>
+                        {ok ? "✓ " : ""}{v}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {products.some((p) => (p.matched_on ?? []).length > 0) && (
+        <ul className="space-y-0.5 border-t border-line/60 px-2.5 py-1.5">
+          {products.map((p, i) =>
+            (p.matched_on ?? []).slice(0, 2).map((reason) => (
+              <li key={`${i}-${reason}`} className="flex gap-1 text-[10.5px] leading-snug text-ink-muted">
+                <span className="shrink-0 font-semibold text-primary">{p.name}</span>
+                <span className="min-w-0 flex-1 truncate" title={reason}>{reason}</span>
+              </li>
+            )),
+          )}
+        </ul>
+      )}
+      <div className="flex items-center justify-between border-t border-line/70 bg-background/60 px-2.5 py-1.5">
+        <span className="truncate text-[10px] text-ink-muted">参数为页面口径，价格与货期以供应商确认为准</span>
+        {products.length === 2 && products[0] && products[1] && (products[0].url || products[1].url) && (
+          <a
+            href={products[0].url ?? products[1].url}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-ink-secondary transition-colors hover:text-primary"
+          >
+            查看第一款
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}

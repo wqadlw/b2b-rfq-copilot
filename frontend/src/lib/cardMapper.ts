@@ -39,5 +39,19 @@ export function toEntityCard(data: ChatEventData): EntityCardData {
     inquiry_id: asString(data.inquiry_id),
     status_text: asString(data.status_text),
     quote_count: data.quote_count === undefined ? undefined : Number(data.quote_count),
+    // product_compare（03-api-spec v1.1）：载荷平铺在事件顶层（criteria_summary/products/rows）
+    compare: parseCompare(data),
+  };
+}
+
+/** product_compare 载荷守卫：形状不符返回 undefined（组件走空态降级）。 */
+function parseCompare(raw: unknown): EntityCardData["compare"] {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const c = raw as Record<string, unknown>;
+  if (!Array.isArray(c.products) || !Array.isArray(c.rows)) return undefined;
+  return {
+    criteria_summary: Array.isArray(c.criteria_summary) ? (c.criteria_summary as string[]) : undefined,
+    products: c.products as NonNullable<EntityCardData["compare"]>["products"],
+    rows: c.rows as NonNullable<EntityCardData["compare"]>["rows"],
   };
 }

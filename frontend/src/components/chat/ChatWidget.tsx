@@ -16,6 +16,7 @@ import { CitationCard } from "./CitationCard";
 import {
   CaseCard,
   InquiryStatusCard,
+  ComparisonCard,
   ProductCard,
   SolutionCard,
   SupplierCard,
@@ -1016,6 +1017,8 @@ function CardStack({
           <CaseCard key={card.url || idx} card={card} />
         ) : card.kind === "inquiry_status" ? (
           <InquiryStatusCard key={idx} card={card} />
+        ) : card.kind === "product_compare" ? (
+          <ComparisonCard key={idx} card={card} />
         ) : (
           <SupplierCard key={card.url || idx} card={card} />
         ),

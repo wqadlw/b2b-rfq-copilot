@@ -75,10 +75,14 @@ export interface ChatEventData {
   quote_count?: number;
   suppliers?: string[];
   created_at?: string;
+  // product_compare（03-api-spec v1.1）
+  criteria_summary?: string[];
+  products?: { name: string; supplier?: string; price?: string; url?: string; matched_on?: string[] }[];
+  rows?: { label: string; values: string[]; ok?: boolean[]; direction_hint?: string | null }[];
 }
 
 export interface EntityCardData {
-  kind: "product" | "supplier" | "solution" | "case" | "inquiry_status";
+  kind: "product" | "supplier" | "solution" | "case" | "inquiry_status" | "product_compare";
   name: string;
   supplier?: string;
   brand?: string | null;
@@ -104,6 +108,12 @@ export interface EntityCardData {
   budget?: string | null;
   suppliers?: string[];
   subtitle?: string | null;
+  // product_compare（03-api-spec v1.1）
+  compare?: {
+    criteria_summary?: string[];
+    products: { name: string; supplier?: string; price?: string; url?: string; matched_on?: string[] }[];
+    rows: { label: string; values: string[]; ok?: boolean[]; direction_hint?: string | null }[];
+  };
 }
 
 export interface Citation {

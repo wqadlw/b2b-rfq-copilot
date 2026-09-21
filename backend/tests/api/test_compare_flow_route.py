@@ -64,3 +64,26 @@ def test_compare_flow_missing_ids_prompts(client: TestClient) -> None:
 def test_compare_flow_one_unknown_id_prompts(client: TestClient) -> None:
     answer, _ = _collect(client, "sess-cmp3", "对比 demo-p-001 和 demo-p-999")
     assert "未找到" in answer
+
+
+def test_compare_flow_emits_product_compare_card(client: TestClient) -> None:
+    raw = b""
+    with client.stream(
+        "POST",
+        "/api/v1/chat/stream",
+        json={"session_id": "sess-cmp4", "message": "对比一下 demo-p-001 和 demo-p-002"},
+    ) as r:
+        assert r.status_code == 200
+        raw = b"".join(r.iter_bytes())
+    payloads = []
+    for m in re.findall(r"data: (.*)", raw.decode("utf-8")):
+        try:
+            payloads.append(json.loads(m))
+        except json.JSONDecodeError:
+            continue
+    cards = [p for p in payloads if isinstance(p, dict) and p.get("kind") == "product_compare"]
+    assert len(cards) == 1
+    card = cards[0]
+    assert card["title"] == "产品参数对比"
+    assert len(card["products"]) == 2
+    assert any(row["label"] == "产品名称" for row in card["rows"])  # 复用 build_compare_matrix 行集
