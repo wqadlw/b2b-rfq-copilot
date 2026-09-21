@@ -79,8 +79,10 @@ SELECTION_CONSULT_MARKERS: tuple[str, ...] = (
     "选哪个",
 )
 
-# 产品编号形态（compare_flow 的合法输入；出现两个编号 = 真产品对比，不拦截）
-_PRODUCT_ID_PATTERN = re.compile(r"[a-z0-9]+-p-\d+|\d{3,}")
+# 产品编号形态（compare_flow 的合法输入；出现两个编号 = 真产品对比，不拦截）。
+# 与 graph.compare_flow 的提取共用本模式：demo 桩 demo-p-* 与真实站点数字主键（≥3 位）。
+# （2026-09-21 实测真实目录 ID 为 312/180 等数字，compare_flow 曾硬编码 demo-p-\d+ 致线上不可用。）
+PRODUCT_ID_PATTERN = re.compile(r"[a-z0-9]+-p-\d+|\d{3,}")
 
 SELECTION_GUARD_NAME = "selection_over_search"
 
@@ -100,7 +102,7 @@ def apply_selection_guard(message: str, understanding: dict[str, Any]) -> dict[s
     text = (message or "").strip()
     if not any(marker in text for marker in SELECTION_CONSULT_MARKERS):
         return understanding
-    if len(_PRODUCT_ID_PATTERN.findall(text)) >= 2:
+    if len(PRODUCT_ID_PATTERN.findall(text)) >= 2:
         return understanding  # 点名了两个具体产品 → compare_flow 的合法场景
 
     corrected = dict(understanding)

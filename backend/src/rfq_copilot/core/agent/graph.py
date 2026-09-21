@@ -19,6 +19,7 @@ from langgraph.types import interrupt
 from rfq_copilot.core.agent.llm import LLMClient
 from rfq_copilot.core.agent.routing_guards import (
     INQUIRY_CREATE_MARKERS,
+    PRODUCT_ID_PATTERN,
     SCENARIO_MARKERS,
     apply_routing_guards,
     apply_scenario_followup_guard,
@@ -682,7 +683,7 @@ def _respond_node(deps: GraphDeps) -> Any:
             # 产品对比：两个 get_detail → 对比矩阵；中立并列，不判优劣（port-spec §3.2）
             tool_calls.append("get_product_detail")
             events.append(("tool_call", {"tool": "get_product_detail", "status": "running"}))
-            ids = re.findall(r"demo-p-\d+", message)[:2]
+            ids = PRODUCT_ID_PATTERN.findall(message)[:2]
             if len(ids) < 2:
                 answer = "请提供两个要对比的产品，例如：对比 demo-p-001 和 demo-p-002。"
                 return {"route": route, "answer": answer, "events": events, "tool_calls": tool_calls}
