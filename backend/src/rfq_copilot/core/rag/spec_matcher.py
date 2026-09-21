@@ -261,3 +261,49 @@ def _find_param(mapping: dict[str, str], *aliases: str) -> str | None:
             if alias in key:
                 return value
     return None
+
+
+# ---------------------------------------------------------------------------
+# 确定性规格扫描（P1-4）：询盘快捷路由 0-token 直达时，同句规格不再丢失。
+# 只认「字段关键词 + 数字 + 可选单位」的显式表达，宁缺勿滥——歧义表达
+# （科学计数、区间）主动跳过，交给 LLM 理解通道处理。
+# ---------------------------------------------------------------------------
+
+_SPEC_TEXT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "pumping_speed",
+        re.compile(
+            r"(?:抽速|抽气速率|pumping\s*speed)[^\d\-~～]{0,4}"
+            r"(\d+(?:\.\d+)?)(?!\d)(?!\s*(?:[×x*]|[eE][+-]?\d|[~～\-—]|⁻))"
+            r"\s*(m³/h|m3/h|m³/min|m3/min|L/s|l/s|L/min|cfm)?",
+            re.I,
+        ),
+    ),
+    (
+        "ultimate_vacuum",
+        re.compile(
+            r"(?:极限真空|真空度|ultimate\s*vacuum)[^\d\-~～]{0,4}"
+            r"(\d+(?:\.\d+)?)(?!\d)(?!\s*(?:[×x*]|[eE][+-]?\d|[~～\-—]|⁻))"
+            r"\s*(MPa|hPa|kPa|mbar|Torr|mmHg|Pa|pa|帕)?",
+            re.I,
+        ),
+    ),
+)
+_OIL_FREE_TEXT_PATTERN = re.compile(r"无油|oil[-\s]?free", re.I)
+
+
+def scan_spec_entities(text: str) -> dict[str, str]:
+    """从用户消息确定性扫描规格实体（canonical 键，值保留用户原表达）。
+
+    用途：询盘快捷路由（INQUIRY_CREATE_MARKERS 0-token 直达）下 entities 原为空，
+    用户"改成抽速 500 m3/h，帮我发起询盘"这类同句规格会丢；本扫描兜住显式表达。
+    单位缺省时仅记数值（spec_match 侧按基准单位解释），范围/科学计数不匹配即跳过。
+    """
+    out: dict[str, str] = {}
+    if _OIL_FREE_TEXT_PATTERN.search(text):
+        out["oil_free"] = "是"
+    for key, pattern in _SPEC_TEXT_PATTERNS:
+        m = pattern.search(text)
+        if m:
+            out[key] = m.group(1) + (f" {m.group(2)}" if m.group(2) else "")
+    return out
