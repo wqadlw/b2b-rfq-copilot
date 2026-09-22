@@ -34,7 +34,7 @@ from rfq_copilot.app.runtime import (
     seed_demo,
     ui_config,
 )
-from rfq_copilot.app.sse_mapper import map_graph_stream
+from rfq_copilot.app.sse_mapper import _follow_ups, map_graph_stream
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.core.auth.ticket import verify_ticket
 from rfq_copilot.core.policies.refusal import RefusalPolicy, detect_capability_refusal
@@ -198,14 +198,20 @@ def create_app() -> FastAPI:
             faq = rtg.deps.faq_matcher.match(body.message) if rtg.deps.faq_matcher else None
 
             async def _guest_stream(
-                answer_text: str, events: list[tuple[EventName, dict[str, Any]]]
+                answer_text: str,
+                events: list[tuple[EventName, dict[str, Any]]],
+                route: str = "",
             ) -> StreamingResponse:
                 async def _gen() -> AsyncIterator[str]:
                     yield sse_text([("status", {"message": "正在查询"})])
                     yield sse_text([("answer_delta", {"delta": answer_text})])
                     for ev in events:
                         yield sse_text([ev])
-                    yield sse_text([("done", {"finish_reason": "answered"})])
+                    done_payload: dict[str, Any] = {"finish_reason": "answered"}
+                    guest_fups = _follow_ups(route)
+                    if guest_fups:
+                        done_payload["follow_ups"] = guest_fups
+                    yield sse_text([("done", done_payload)])
 
                 return StreamingResponse(
                     _gen(),
@@ -217,7 +223,7 @@ def create_app() -> FastAPI:
             if faq is not None:
                 rtg.store.append_message(body.session_id, "user", body.message)
                 rtg.store.append_message(body.session_id, "assistant", faq)
-                return await _guest_stream(faq, [])
+                return await _guest_stream(faq, [], route="faq_answer")
 
             # G4: 行业方案捷径（0 token 公开知识：痛点/拓扑/关联供应商，含 solution 卡）
             solution_industry = detect_solution_query(body.message)
@@ -246,7 +252,7 @@ def create_app() -> FastAPI:
                         "卡片内含痛点分析与设备拓扑，点击可查看完整方案；登录后可让 AI 按您的产量匹配机型。"
                     )
                     rtg.store.append_message(body.session_id, "assistant", sol_answer)
-                    return await _guest_stream(sol_answer, sol_events)
+                    return await _guest_stream(sol_answer, sol_events, route="solution_flow")
 
             # G4.5: 客户案例捷径（0 token 公开背书：量化指标/客户成效，含 case 卡）
             case_industry, case_matched = detect_case_query(body.message)
@@ -279,7 +285,7 @@ def create_app() -> FastAPI:
                         "（卡片含量化指标与客户成效）。白皮书可在案例页留资下载。"
                     )
                     rtg.store.append_message(body.session_id, "assistant", case_answer)
-                    return await _guest_stream(case_answer, case_events)
+                    return await _guest_stream(case_answer, case_events, route="case_flow")
 
             # G4.6: 询盘状态捷径（session_id 即凭证；0 token 只读摘要）
             if detect_inquiry_status_query(body.message) and rtg.deps.inquiry_status is not None:
@@ -324,7 +330,7 @@ def create_app() -> FastAPI:
                 rtg.store.append_message(body.session_id, "user", body.message)
                 sup_result = await guest_supplier_answer(supplier_mode, rtg.deps.suppliers)
                 rtg.store.append_message(body.session_id, "assistant", sup_result["answer"])
-                return await _guest_stream(sup_result["answer"], sup_result["events"])
+                return await _guest_stream(sup_result["answer"], sup_result["events"], route="supplier_flow")
 
             # G2 优先：知识/对比类问题先走引用（"X和Y有什么区别"即使含产品词也是知识问答）
             # 询盘意图消息跳过 G1/G2 捷径——直达 graph inquiry_flow（确认卡 human-in-the-loop）
@@ -337,7 +343,7 @@ def create_app() -> FastAPI:
                 knowledge_result = await guest_knowledge_answer(body.message, rtg.deps.rag, rtg.manifest)
                 if knowledge_result is not None:
                     rtg.store.append_message(body.session_id, "assistant", knowledge_result["answer"])
-                    return await _guest_stream(knowledge_result["answer"], knowledge_result["events"])
+                    return await _guest_stream(knowledge_result["answer"], knowledge_result["events"], route="knowledge_flow")
 
             # G1: explicit product word / demo id -> direct catalog search (0 token)
             guest_query = "" if detect_guest_inquiry_intent(body.message) else detect_guest_query(body.message)
@@ -345,7 +351,7 @@ def create_app() -> FastAPI:
                 rtg.store.append_message(body.session_id, "user", body.message)
                 result = await guest_search_answer(guest_query, rtg.deps.catalog, rtg.manifest)
                 rtg.store.append_message(body.session_id, "assistant", result["answer"])
-                return await _guest_stream(result["answer"], result["events"])
+                return await _guest_stream(result["answer"], result["events"], route="product_flow")
 
             if faq is None and not _guest_refusal_hit(body.message, rtg.deps.refusal_policies):
                 rtg.store.append_message(body.session_id, "user", body.message)

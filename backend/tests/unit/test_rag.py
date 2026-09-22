@@ -35,6 +35,24 @@ def test_chunking_packs_long_documents() -> None:
     assert all(len(c.content) <= 500 for c in chunks)
 
 
+def test_chunking_propagates_url_to_all_chunks() -> None:
+    """v1.3 citation.url?：文档 url 透传所有分块；缺省 None 不阻塞（旧导出数据兼容）。"""
+    doc_with_url = KnowledgeDocument(
+        doc_id="kb-url-1",
+        title="选型指南",
+        doc_type="platform_faq",
+        trust_level="platform",
+        content="第一段。" * 120 + "\n\n第二段。" * 120,
+        url="/tech/guide/xuan-xing.html",
+    )
+    chunks = chunk_document(doc_with_url)
+    assert len(chunks) >= 2
+    assert all(c.url == "/tech/guide/xuan-xing.html" for c in chunks)
+
+    chunks_bare = chunk_document(_doc("无 url 旧文档。"))
+    assert all(c.url is None for c in chunks_bare)
+
+
 def test_render_context_groups_trust_and_escapes() -> None:
     deps, _ = make_deps()
     chunks = [

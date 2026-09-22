@@ -52,7 +52,7 @@
 | `wechat_guidance` | `{"guidance": "…", "qrcode_url": "…", "contact_name": "…"}` | 询盘创建后微信一对一引导 |
 | `login_required` | `{"reason": "llm_turn", "suggestions": [...]}` | 游客触达需登录功能（0 token 引导，guest tier） |
 | `token_budget_exceeded` | `{"user_ref": "..."}` | 当日 token 预算耗尽（引导微信/明日再试） |
-| `done` | `{"finish_reason": "answered\|inquiry_created\|handoff\|error\|login_required\|rate_limited\|token_budget_exceeded\|human_serving"}` | 流结束 |
+| `done` | `{"finish_reason": "answered\|inquiry_created\|handoff\|error\|login_required\|rate_limited\|token_budget_exceeded\|human_serving", "follow_ups?": ["…"]}` | 流结束；`follow_ups`（v1.3 新增，可选）：`finish_reason=answered` 时按路由启发式附 0~2 条追问建议（零 token，前端渲染为可点击 chips） |
 
 > 事件全集与前端 `frontend/src/lib/types.ts` 的 `ChatEventName` 一一对应（14 名，QA-0006 收敛：后端 Literal == 实发集 == 前端冻结集，表驱动合同测锁定）。
 
