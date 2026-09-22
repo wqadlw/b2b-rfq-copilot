@@ -17,6 +17,8 @@ class Chunk:
     supplier_id: str | None = None
     product_id: str | None = None
     category_id: str | None = None
+    # 03-api-spec citation.url?：随文档透传到所有分块（v1.3 可点击引用）
+    url: str | None = None
     # 01-port-spec §6.4.1：结构化产品参数（随文档透传到所有分块；非产品块为 None）
     params: dict[str, str] | None = None
 
@@ -30,6 +32,7 @@ def chunk_document(doc: KnowledgeDocument, max_chars: int = MAX_CHARS) -> list[C
         "supplier_id": doc.supplier_id,
         "product_id": doc.product_id,
         "category_id": doc.category_id,
+        "url": doc.url,
         "params": doc.params,
     }
     paragraphs = [p.strip() for p in doc.content.replace("\r\n", "\n").split("\n\n") if p.strip()]

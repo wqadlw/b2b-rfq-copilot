@@ -1,8 +1,8 @@
-"""SSE mapper: inquiry_confirm draft object flattening (contract: 03-api-spec §2)."""
+"""SSE mapper: inquiry_confirm draft object flattening + done.follow_ups (contract: 03-api-spec §2)."""
 
 import json
 
-from rfq_copilot.app.sse_mapper import _draft_payload
+from rfq_copilot.app.sse_mapper import _draft_payload, _follow_ups
 
 
 def _draft_json(product_id: str | None, quantity: int | None, name: str, phone: str) -> str:
@@ -53,3 +53,11 @@ def test_draft_payload_includes_specs_summary_when_params_present() -> None:
 def test_draft_payload_specs_none_without_params() -> None:
     data = _draft_payload(_draft_json("demo-p-001", 10, "张三", "13800000000"))
     assert data["specs"] is None
+
+
+def test_follow_ups_by_route_capped_at_two() -> None:
+    """v1.3 done.follow_ups?：路由命中给 ≤2 条；未登记路由给空（无追问）。"""
+    fups = _follow_ups("product_flow")
+    assert 1 <= len(fups) <= 2
+    assert _follow_ups("status_flow") == []
+    assert _follow_ups("") == []

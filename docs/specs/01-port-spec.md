@@ -142,7 +142,7 @@ class KnowledgeSourcePort(Protocol):
     def fingerprint(self) -> str: ...  # 内容指纹，用于增量同步判断
 ```
 
-`KnowledgeDocument`: `doc_id, title, doc_type: Literal[platform_faq, selection_guide, policy, product, merchant_article], trust_level: Literal[platform, merchant, ugc], content: str, metadata: {product_id?, supplier_id?, category_id?, version, updated_at?}, language`。
+`KnowledgeDocument`: `doc_id, title, doc_type: Literal[platform_faq, selection_guide, policy, product, merchant_article], trust_level: Literal[platform, merchant, ugc], content: str, url?: str（前台详情页相对路径，v1.3 新增：随 citation 事件透传供前端渲染可点击引用；缺省/None 时引用不可点）, metadata: {product_id?, supplier_id?, category_id?, version, updated_at?}, language`。
 
 约束：
 - `trust_level` 必填且与 `doc_type` 一致性由 adapter 测试保证（platform_faq/policy/selection_guide 必须 `platform`；product/merchant_article 必须 `merchant`）。

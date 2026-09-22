@@ -18,6 +18,9 @@ class KnowledgeDocument(BaseModel):
     doc_type: DocType
     trust_level: TrustLevel
     content: str
+    # 03-api-spec citation.url?：前台详情页相对路径，随 citation 事件透传（v1.3）；
+    # 缺省 None → 引用事件不带 url（前端渲染为不可点标签）
+    url: str | None = None
     supplier_id: str | None = None
     product_id: str | None = None
     category_id: str | None = None
