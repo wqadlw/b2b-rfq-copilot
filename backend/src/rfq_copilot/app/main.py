@@ -636,10 +636,7 @@ def create_app() -> FastAPI:
         corpus = await rag.corpus()
         families = knowledge_admin.family_map(corpus)
         manifest_hashes = knowledge_admin.load_manifest_hashes(get_settings().knowledge_data_dir)
-        items = [
-            knowledge_admin.doc_summary(base_id, chunks, manifest_hashes)
-            for base_id, chunks in families.items()
-        ]
+        items = [knowledge_admin.doc_summary(base_id, chunks, manifest_hashes) for base_id, chunks in families.items()]
         q_lower = q.strip().lower()
         if q_lower:
             items = [d for d in items if q_lower in d["doc_id"].lower() or q_lower in d["title"].lower()]
@@ -675,9 +672,7 @@ def create_app() -> FastAPI:
         if not query:
             raise HTTPException(status_code=400, detail={"code": "MISSING_FIELDS", "message": "query 必填"})
         if body.top_k < 1 or body.top_k > 50:
-            raise HTTPException(
-                status_code=400, detail={"code": "INVALID_TOP_K", "message": "top_k 取值 1~50"}
-            )
+            raise HTTPException(status_code=400, detail={"code": "INVALID_TOP_K", "message": "top_k 取值 1~50"})
         spec = extract_spec_criteria(body.entities) if body.entities else None
         scored = await rag.search_scored(query, top_k=body.top_k, spec=spec)
         records = [
@@ -712,9 +707,7 @@ def create_app() -> FastAPI:
     # ---- 缺口事件（spec 02 §1.2，N2）----
 
     @app.get("/api/v1/no-match-events")
-    async def no_match_events(
-        request: Request, route: str = "", limit: int = 50, offset: int = 0
-    ) -> dict[str, Any]:
+    async def no_match_events(request: Request, route: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
         """缺口事件列表：产品零命中 / 知识零召回。缺口工单自动化的唯一数据源。"""
         _check_internal_token(request)
         filters = {"route": route} if route else None

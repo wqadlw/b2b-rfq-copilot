@@ -37,9 +37,7 @@ def test_jsonl_store_persists_and_replays(tmp_path) -> None:  # type: ignore[no-
 
 def test_jsonl_store_replay_skips_corrupt_lines(tmp_path) -> None:  # type: ignore[no-untyped-def]
     data_dir = tmp_path
-    (data_dir / "feedback.jsonl").write_text(
-        '{"id": "good"}\n{corrupt half line\n', encoding="utf-8"
-    )
+    (data_dir / "feedback.jsonl").write_text('{"id": "good"}\n{corrupt half line\n', encoding="utf-8")
     reborn = JsonlStore("feedback", data_dir=str(data_dir))
     items, total = reborn.items()
     assert total == 1 and items[0]["id"] == "good"

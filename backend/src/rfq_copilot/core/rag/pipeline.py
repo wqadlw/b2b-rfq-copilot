@@ -97,9 +97,7 @@ class RAGPipeline:
         candidates = await self._store.search(query_vector, top_k=RECALL_TOP_K)
         if self._hybrid:
             keyword_hits = await self._store.keyword_search(extract_keywords(query), top_k=RECALL_TOP_K)
-            fused = rrf_fuse_scored(
-                [s.chunk for s in candidates], [s.chunk for s in keyword_hits], top_k=RECALL_TOP_K
-            )
+            fused = rrf_fuse_scored([s.chunk for s in candidates], [s.chunk for s in keyword_hits], top_k=RECALL_TOP_K)
         else:
             fused = [(s.chunk, s.score) for s in candidates]
         if spec is not None and not spec.is_empty:

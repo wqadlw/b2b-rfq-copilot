@@ -73,9 +73,7 @@ def _build_embedder(settings: Any) -> HashingEmbedder | OpenAICompatEmbedder:
     return HashingEmbedder()
 
 
-def _build_rag(
-    settings: Any, manifest: Manifest, hit_recorder: Any = None
-) -> RAGPipeline | None:
+def _build_rag(settings: Any, manifest: Manifest, hit_recorder: Any = None) -> RAGPipeline | None:
     """Build the pipeline with an empty store; seeding happens at app startup (async).
 
     QA-0007/0010：按 Settings.rag_store 装配存储——"inmemory"（demo/CI）|

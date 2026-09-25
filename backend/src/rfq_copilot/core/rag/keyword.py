@@ -44,9 +44,7 @@ def extract_keywords(query: str, max_tokens: int = _MAX_TOKENS) -> list[str]:
     return tokens
 
 
-def rrf_fuse_scored(
-    *ranked_lists: Sequence[Chunk], top_k: int = 20
-) -> list[tuple[Chunk, float]]:
+def rrf_fuse_scored(*ranked_lists: Sequence[Chunk], top_k: int = 20) -> list[tuple[Chunk, float]]:
     """多路召回 RRF 融合（带分数版，spec 02-engine-read-api-spec §2.0）。
 
     score = Σ 1/(60+rank)，同 doc_id 累加、保留首现 chunk；返回按融合分降序的
