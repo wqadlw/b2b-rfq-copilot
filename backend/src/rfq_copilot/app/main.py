@@ -346,7 +346,9 @@ def create_app() -> FastAPI:
                 knowledge_result = await guest_knowledge_answer(body.message, rtg.deps.rag, rtg.manifest)
                 if knowledge_result is not None:
                     rtg.store.append_message(body.session_id, "assistant", knowledge_result["answer"])
-                    return await _guest_stream(knowledge_result["answer"], knowledge_result["events"], route="knowledge_flow")
+                    return await _guest_stream(
+                        knowledge_result["answer"], knowledge_result["events"], route="knowledge_flow"
+                    )
 
             # G1: explicit product word / demo id -> direct catalog search (0 token)
             guest_query = "" if detect_guest_inquiry_intent(body.message) else detect_guest_query(body.message)

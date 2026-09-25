@@ -325,6 +325,9 @@ async def guest_knowledge_answer(message: str, rag: RAGPipeline | None, manifest
     lines.append("以上为原文摘录；登录后我将基于资料给出完整分析与建议。")
     events: list[tuple[EventName, dict[str, Any]]] = [
         ("retrieval", {"count": len(chunks[:3]), "trust": [c.trust_level for c in chunks[:3]]}),
-        *(("citation", {"title": c.title, "trust": c.trust_level, **({"url": c.url} if c.url else {})}) for c in chunks[:3]),
+        *(
+            ("citation", {"title": c.title, "trust": c.trust_level, **({"url": c.url} if c.url else {})})
+            for c in chunks[:3]
+        ),
     ]
     return {"answer": "\n".join(lines), "events": events, "finish": "answered"}

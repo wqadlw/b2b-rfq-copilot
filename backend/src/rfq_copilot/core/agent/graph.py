@@ -593,7 +593,12 @@ def _respond_node(deps: GraphDeps) -> Any:
                     }
                 )
             for i, c in enumerate(chunks, start=1):
-                events.append(("citation", {"index": i, "title": c.title, "trust": c.trust_level, **({"url": c.url} if c.url else {})}))
+                events.append(
+                    (
+                        "citation",
+                        {"index": i, "title": c.title, "trust": c.trust_level, **({"url": c.url} if c.url else {})},
+                    )
+                )
             # 真流式 LLM 回答：token 经 custom 通道实时推送（sse_mapper 转发 answer_delta）
             writer = get_stream_writer()
             answer_system = (
