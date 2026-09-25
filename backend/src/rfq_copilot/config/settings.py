@@ -39,6 +39,10 @@ class Settings(BaseSettings):
 
     knowledge_data_dir: str = ""
 
+    # spec 02-engine-read-api-spec §1.0：运营观测数据（feedback/no_match/hit_stats）落盘目录；
+    # 缺省空串 = 纯内存（CI/测试零意外写盘）；生产 .env 显式设 runtime_data 开启持久化。
+    runtime_data_dir: str = ""
+
     # Graph checkpointer backend: "memory" (ephemeral; tests/demo), "sqlite" (durable
     # single-node: interrupt()/resume state survives a restart; M1+ default candidate).
     checkpointer_backend: str = "memory"
