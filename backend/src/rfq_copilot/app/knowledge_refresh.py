@@ -164,6 +164,10 @@ async def run_once(runtime: Any) -> dict[str, Any]:
         record["error"] = str(exc)
         logger.warning("knowledge.refresh.failed", error=str(exc))
     runtime.last_refresh = record
+    # spec 02 §3（N4）：近 7 轮历史（内存态；knowledge_refresh 字段保留末条向后兼容）
+    history = list(getattr(runtime, "refresh_history", []) or [])
+    history.append(record)
+    runtime.refresh_history = history[-7:]
     return record
 
 

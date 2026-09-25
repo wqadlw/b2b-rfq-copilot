@@ -126,6 +126,10 @@
 
 离线知识模式（`KNOWLEDGE_DATA_DIR` 非空）额外携带语料新鲜度（08-knowledge-export-spec §4/§5）：`"corpus_age_days": <float|null>, "corpus_stale": <bool>`；demo 模式不携带。
 
+### GET /api/v1/health 兜底刷新历史（spec 02-engine-read-api-spec §3）
+
+`refresh_history: [近 7 轮刷新记录]`（末条 == `knowledge_refresh`；未运行为 null）。内存态，重启清零。`knowledge_refresh` 字段保留向后兼容。
+
 ### 知识运行时维护（08-knowledge-export-spec §6，全部需 X-Internal-Token）
 
 | 端点 | 说明 |
@@ -134,6 +138,44 @@
 | `DELETE /api/v1/knowledge/{doc_id}` | 移除该文档全部块；返回 `{"doc_id","removed","status":"removed"}` |
 
 **调用方契约（站点 webhook，阶段 3）**：doc_id 必须与导出脚本命名一致，保证运行时更新与每日兜底重导可对账。前缀全集：产品=`offline-product-{slug}`；CMS 内容（阶段 3.2，`offline-{复数源名}-{slug}`）=文章 `offline-articles-{slug}`、方案 `offline-solutions-{slug}`、案例 `offline-cases-{slug}`、洞察 `offline-insights-{slug}`、服务 `offline-services-{slug}`。信任等级：平台内容（文章/方案/洞察）`platform`；供应商绑定内容（案例/服务）`merchant` + `supplier_id`。slug 即 doc_id 的一部分：slug 变更须先 DELETE 旧 doc_id 再 POST 新 doc_id；非发布态一律 DELETE。站点侧失败仅告警不阻断内容保存（fail-open）。
+
+---
+
+## 7. 运营只读端点（A-01，authority: 中枢仓 docs/specs/02-engine-read-api-spec.md，全部需 X-Internal-Token）
+
+> 消费方=找真空运营中枢网关(:8002)。feedback 端点为唯一例外改动（存储层真存，请求契约不变）。
+
+### 反馈（spec 02 §1.1）
+
+| 端点 | 说明 |
+|---|---|
+| `POST /api/v1/feedback`（公开） | 请求契约不变；**响应新增 `id`**（uuid12）。存储 `{id,ts,seq,session_id,message_id,feedback,comment}`；`RUNTIME_DATA_DIR` 非空时落 `<dir>/feedback.jsonl`（启动回放，重启不丢），空=纯内存 |
+| `GET /api/v1/feedback?feedback=&session_id=&limit=&offset=` | `{items[ts倒序], total}` |
+| `GET /api/v1/feedback/stats?period=today\|week\|month` | `{period,helpful,not_helpful,total,by_day[]}` |
+
+### 缺口事件（spec 02 §1.2）
+
+| 端点 | 说明 |
+|---|---|
+| `GET /api/v1/no-match-events?route=&limit=&offset=` | `{items:[{ts,session_id,question,route,keyword?}], total}` |
+| `GET /api/v1/no-match/stats?period=` | `{period,total,by_route,by_day,top_questions≤10}` |
+
+产生路径（GraphDeps.no_match_recorder 注入，**不走 SSE 事件通道**——事件名冻结集 QA-0006）：product_flow 零命中（route=product_flow）与 knowledge_flow 零召回（route=knowledge_flow）。落 `no_match_events.jsonl`。
+
+### knowledge 只读四端点（spec 02 §2；v1 仅 inmemory，pgvector → 503 ADMIN_UNSUPPORTED）
+
+| 端点 | 说明 |
+|---|---|
+| `GET /api/v1/knowledge/stats` | `{documents,chunks,by_doc_type,by_trust_level,rag_store,corpus{age_days,stale,doc_count,source}|null}`；文档数=家族去重（剥 ` (i/n)` 后缀） |
+| `GET /api/v1/knowledge/docs?q=&trust=&doc_type=&page=&page_size=` | 家族条目列表（doc_id 字典序）：`{items:[{doc_id,title,doc_type,trust_level,chunk_count,supplier_id,product_id,category_id,params,content_hash,hash_source}],page,page_size,total}`。`hash_source=manifest`（离线 export_manifest.json 真值）|`reconstructed`（分块重建 sha256，超长段硬切边缘用例可能与站点侧不一致——对账以存在性+chunk_count 兜底）。**无时间戳（数据缺口，v1 不提供）** |
+| `GET /api/v1/knowledge/docs/{doc_id}` | 404 KNOWLEDGE_NOT_FOUND；`{doc:<同上>,chunks:[chunk_index 升序]}`；base/带后缀 doc_id 均可查 |
+| `POST /api/v1/knowledge/test-retrieval` | 入参 `{query,top_k=5,score_threshold=0.0,entities?}`（entities=scan_spec_entities 形态→SpecCriteria）；出参 `{query,rag_store,count,records:[{doc_id,chunk_doc_id,chunk_index,title,content,trust_level,score}],routing:{predicted_route,signals}}`。**score=RRF 融合分（Σ1/(60+rank)，非余弦）**；免 LLM；走 search_scored 专用路径，**不触发命中统计** |
+| `GET /api/v1/knowledge/hit-stats?days=1~90` | `{days,series:[{date,doc_id,hits}],total_by_doc}`；记录点=RAGPipeline.search() final top-k 去重 doc_id；落 `hit_stats.json`（重启不丢） |
+
+### 兼容性承诺
+
+- 以上全部为**新增**端点/字段，不改动任何既有端点行为（feedback 响应新增 id 为增量）。
+- Chunk 新增 `doc_type` 透传字段（缺省 None→统计归 unknown）；`rrf_fuse` 改为 `rrf_fuse_scored` 薄委托（行为不变）。
 
 ## 4.5 坐席接管（CS-1，全部需 X-Internal-Token）
 

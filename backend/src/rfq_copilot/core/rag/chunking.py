@@ -14,6 +14,10 @@ class Chunk:
     title: str
     content: str
     trust_level: TrustLevel
+    # spec 02-engine-read-api-spec §2.0：doc_type 随文档透传到所有分块——
+    # 运营只读端点（knowledge/stats、/docs 列表）的 doc_type 分布数据源；
+    # 旧装载路径缺省 None（统计侧归 unknown）
+    doc_type: str | None = None
     supplier_id: str | None = None
     product_id: str | None = None
     category_id: str | None = None
@@ -29,6 +33,7 @@ def chunk_document(doc: KnowledgeDocument, max_chars: int = MAX_CHARS) -> list[C
         "doc_id": doc.doc_id,
         "title": doc.title,
         "trust_level": doc.trust_level,
+        "doc_type": doc.doc_type,
         "supplier_id": doc.supplier_id,
         "product_id": doc.product_id,
         "category_id": doc.category_id,

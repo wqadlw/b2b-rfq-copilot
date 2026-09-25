@@ -50,6 +50,17 @@ class FeedbackRequest(BaseModel):
     comment: str | None = None
 
 
+class TestRetrievalRequest(BaseModel):
+    """召回测试入参（spec 02 §2.4，Dify hit_testing 形态；score 为 RRF 融合分）。"""
+
+    query: str = Field(default="", max_length=2000)
+    top_k: int = 5
+    score_threshold: float = 0.0
+    # understanding.entities 形态（scan_spec_entities 产物）→ SpecCriteria 规格过滤；
+    # 缺省 None = 不做规格过滤
+    entities: dict[str, Any] | None = None
+
+
 class UiConfigResponse(BaseModel):
     adapter: str
     display_name: str
@@ -69,3 +80,5 @@ class HealthResponse(BaseModel):
     corpus_stale: bool = False
     # 08-knowledge-export-spec §6.4：最近一轮兜底刷新结果（未启用为 None）
     knowledge_refresh: dict[str, Any] | None = None
+    # spec 02 §3（N4）：兜底刷新历史（近 7 轮，末条==knowledge_refresh；未运行为空/None）
+    refresh_history: list[dict[str, Any]] | None = None

@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
+from rfq_copilot.app import knowledge_admin
 from rfq_copilot.app.guest_paths import (
     detect_case_query,
     detect_guest_inquiry_intent,
@@ -38,12 +39,14 @@ from rfq_copilot.app.sse_mapper import _follow_ups, map_graph_stream
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.core.auth.ticket import verify_ticket
 from rfq_copilot.core.policies.refusal import RefusalPolicy, detect_capability_refusal
+from rfq_copilot.core.rag.spec_matcher import extract_spec_criteria
 from rfq_copilot.schemas.chat import (
     ChatRequest,
     FeedbackRequest,
     HealthResponse,
     SessionCreateRequest,
     SessionCreateResponse,
+    TestRetrievalRequest,
     UiConfigResponse,
 )
 from rfq_copilot.schemas.events import EventName, sse_text
@@ -343,7 +346,9 @@ def create_app() -> FastAPI:
                 knowledge_result = await guest_knowledge_answer(body.message, rtg.deps.rag, rtg.manifest)
                 if knowledge_result is not None:
                     rtg.store.append_message(body.session_id, "assistant", knowledge_result["answer"])
-                    return await _guest_stream(knowledge_result["answer"], knowledge_result["events"], route="knowledge_flow")
+                    return await _guest_stream(
+                        knowledge_result["answer"], knowledge_result["events"], route="knowledge_flow"
+                    )
 
             # G1: explicit product word / demo id -> direct catalog search (0 token)
             guest_query = "" if detect_guest_inquiry_intent(body.message) else detect_guest_query(body.message)
@@ -485,6 +490,7 @@ def create_app() -> FastAPI:
             corpus_age_days=freshness.age_days if freshness is not None else None,
             corpus_stale=freshness.stale if freshness is not None else False,
             knowledge_refresh=rt.last_refresh,
+            refresh_history=rt.refresh_history or None,  # spec 02 §3（N4）
         )
 
     @app.get("/api/v1/sessions/{session_id}/messages")
@@ -570,6 +576,161 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "知识库未启用"})
         removed = await rt.deps.rag.remove_doc(doc_id)
         return {"doc_id": doc_id, "chunks_removed": removed}
+
+    # ---- 运营只读端点（spec 02-engine-read-api-spec §2；X-Internal-Token）----
+
+    def _admin_rag() -> Any:
+        """只读端点公共前置：RAG 启用 + inmemory 后端（v1 已知降级，spec 02 §0.3）。返回窄化后的 pipeline。"""
+        rt = get_runtime()
+        rag = rt.deps.rag
+        if rag is None:
+            raise HTTPException(status_code=503, detail={"code": "PORT_DISABLED", "message": "知识库未启用"})
+        if get_settings().rag_store != "inmemory":
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "ADMIN_UNSUPPORTED", "message": "运营只读端点 v1 仅支持 inmemory 存储"},
+            )
+        return rag
+
+    @app.get("/api/v1/knowledge/stats")
+    async def knowledge_stats(request: Request) -> dict[str, Any]:
+        """知识库存总览（N3）：文档/chunk 计数 + doc_type/trust 分布 + 语料新鲜度。"""
+        rag = _admin_rag()
+        corpus = await rag.corpus()
+        families = knowledge_admin.family_map(corpus)
+        by_doc_type: dict[str, int] = {}
+        by_trust: dict[str, int] = {}
+        for chunks in families.values():
+            first = chunks[0]
+            dtype = str(first.doc_type or "unknown")
+            by_doc_type[dtype] = by_doc_type.get(dtype, 0) + 1
+            by_trust[first.trust_level] = by_trust.get(first.trust_level, 0) + 1
+        freshness = get_runtime().corpus_freshness
+        corpus_payload = (
+            {
+                "age_days": freshness.age_days,
+                "stale": freshness.stale,
+                "doc_count": freshness.doc_count,
+                "source": freshness.source,
+            }
+            if freshness is not None
+            else None
+        )
+        return {
+            "documents": len(families),
+            "chunks": len(corpus),
+            "by_doc_type": by_doc_type,
+            "by_trust_level": by_trust,
+            "rag_store": get_settings().rag_store,
+            "corpus": corpus_payload,
+        }
+
+    @app.get("/api/v1/knowledge/docs")
+    async def knowledge_docs(
+        request: Request,
+        q: str = "",
+        trust: str = "",
+        doc_type: str = "",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        """知识文档列表（N3）：家族归并 + 过滤 + 翻页；doc_id 字典序确定性排序。"""
+        rag = _admin_rag()
+        if page < 1 or page_size < 1 or page_size > 100:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_PAGINATION", "message": "page ≥ 1 且 1 ≤ page_size ≤ 100"},
+            )
+        corpus = await rag.corpus()
+        families = knowledge_admin.family_map(corpus)
+        manifest_hashes = knowledge_admin.load_manifest_hashes(get_settings().knowledge_data_dir)
+        items = [knowledge_admin.doc_summary(base_id, chunks, manifest_hashes) for base_id, chunks in families.items()]
+        q_lower = q.strip().lower()
+        if q_lower:
+            items = [d for d in items if q_lower in d["doc_id"].lower() or q_lower in d["title"].lower()]
+        if trust:
+            items = [d for d in items if d["trust_level"] == trust]
+        if doc_type:
+            items = [d for d in items if d["doc_type"] == doc_type]
+        total = len(items)
+        start = (page - 1) * page_size
+        return {"items": items[start : start + page_size], "page": page, "page_size": page_size, "total": total}
+
+    @app.get("/api/v1/knowledge/docs/{doc_id}")
+    async def knowledge_doc_detail(doc_id: str, request: Request) -> dict[str, Any]:
+        """知识文档详情（N3）：家族条目 + 分块内容（chunk_index 升序）。"""
+        rag = _admin_rag()
+        corpus = await rag.corpus()
+        families = knowledge_admin.family_map(corpus)
+        base_id = knowledge_admin.base_doc_id(doc_id)
+        chunks = families.get(base_id)
+        if chunks is None:
+            raise HTTPException(status_code=404, detail={"code": "KNOWLEDGE_NOT_FOUND", "message": "文档不存在"})
+        manifest_hashes = knowledge_admin.load_manifest_hashes(get_settings().knowledge_data_dir)
+        return {
+            "doc": knowledge_admin.doc_summary(base_id, chunks, manifest_hashes),
+            "chunks": [knowledge_admin.chunk_payload(c) for c in chunks],
+        }
+
+    @app.post("/api/v1/knowledge/test-retrieval")
+    async def knowledge_test_retrieval(body: TestRetrievalRequest, request: Request) -> dict[str, Any]:
+        """召回测试（N3，Dify hit_testing 形态）：带 RRF 分数，免 LLM，不触发命中统计。"""
+        rag = _admin_rag()
+        query = body.query.strip()
+        if not query:
+            raise HTTPException(status_code=400, detail={"code": "MISSING_FIELDS", "message": "query 必填"})
+        if body.top_k < 1 or body.top_k > 50:
+            raise HTTPException(status_code=400, detail={"code": "INVALID_TOP_K", "message": "top_k 取值 1~50"})
+        spec = extract_spec_criteria(body.entities) if body.entities else None
+        scored = await rag.search_scored(query, top_k=body.top_k, spec=spec)
+        records = [
+            {
+                "doc_id": knowledge_admin.base_doc_id(s.chunk.doc_id),
+                "chunk_doc_id": s.chunk.doc_id,
+                "chunk_index": s.chunk.chunk_index,
+                "title": s.chunk.title,
+                "content": s.chunk.content,
+                "trust_level": s.chunk.trust_level,
+                "score": round(s.score, 6),
+            }
+            for s in scored
+            if s.score >= body.score_threshold
+        ]
+        return {
+            "query": query,
+            "rag_store": get_settings().rag_store,
+            "count": len(records),
+            "records": records,
+            "routing": knowledge_admin.predict_route(query),
+        }
+
+    @app.get("/api/v1/knowledge/hit-stats")
+    async def knowledge_hit_stats(request: Request, days: int = 30) -> dict[str, Any]:
+        """知识命中统计（N3）：RAG search() final top-k 按日聚合；效果象限的燃料。"""
+        _admin_rag()
+        if days < 1 or days > 90:
+            raise HTTPException(status_code=400, detail={"code": "INVALID_DAYS", "message": "days 取值 1~90"})
+        return get_runtime().hit_stats.summary(days)
+
+    # ---- 缺口事件（spec 02 §1.2，N2）----
+
+    @app.get("/api/v1/no-match-events")
+    async def no_match_events(request: Request, route: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
+        """缺口事件列表：产品零命中 / 知识零召回。缺口工单自动化的唯一数据源。"""
+        _check_internal_token(request)
+        filters = {"route": route} if route else None
+        items, total = get_runtime().no_match_store.items(filters=filters, limit=limit, offset=offset)
+        return {"items": items, "total": total}
+
+    @app.get("/api/v1/no-match/stats")
+    async def no_match_stats(request: Request, period: str = "today") -> dict[str, Any]:
+        """缺口事件统计：按路由/按日聚合 + top 问题（候选知识池的入口视图）。"""
+        _check_internal_token(request)
+        if period not in VALID_PERIODS:
+            raise HTTPException(
+                status_code=400, detail={"code": "INVALID_PERIOD", "message": "period 仅支持 today/week/month"}
+            )
+        return get_runtime().no_match_store.stats(period)
 
     @app.get("/api/v1/analytics/summary")
     async def analytics_summary(request: Request, period: str = "today") -> dict[str, Any]:
@@ -732,7 +893,45 @@ def create_app() -> FastAPI:
 
     @app.post("/api/v1/feedback")
     async def feedback(body: FeedbackRequest) -> dict[str, str]:
-        return {"status": "recorded"}
+        """用户反馈真存（spec 02 §1.1，M1/N1）：此前空壳丢数据——运营质量信号唯一来源。
+
+        请求契约不变（网站端零改动）；响应新增 id 字段（向后兼容）。
+        """
+        feedback_id = uuid.uuid4().hex[:12]
+        get_runtime().feedback_store.append(
+            {
+                "id": feedback_id,
+                "session_id": body.session_id,
+                "message_id": body.message_id,
+                "feedback": body.feedback,
+                "comment": body.comment,
+            }
+        )
+        return {"status": "recorded", "id": feedback_id}
+
+    @app.get("/api/v1/feedback")
+    async def feedback_list(
+        request: Request, feedback: str = "", session_id: str = "", limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        """反馈列表（运营只读）：按 ts 倒序 + 可选过滤。"""
+        _check_internal_token(request)
+        filters: dict[str, str] = {}
+        if feedback:
+            filters["feedback"] = feedback
+        if session_id:
+            filters["session_id"] = session_id
+        items, total = get_runtime().feedback_store.items(filters=filters or None, limit=limit, offset=offset)
+        return {"items": items, "total": total}
+
+    @app.get("/api/v1/feedback/stats")
+    async def feedback_stats(request: Request, period: str = "today") -> dict[str, Any]:
+        """反馈统计：👍👎 总量 + 按日聚合（差评列表屏/反馈分析屏数据源）。"""
+        _check_internal_token(request)
+        if period not in VALID_PERIODS:
+            raise HTTPException(
+                status_code=400, detail={"code": "INVALID_PERIOD", "message": "period 仅支持 today/week/month"}
+            )
+        return get_runtime().feedback_store.stats(period)
 
     return app
 
