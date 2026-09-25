@@ -18,6 +18,9 @@ venv/
 .mypy_cache/
 .coverage
 htmlcov/
+# 运营观测数据落盘（spec 02：feedback/no_match/hit_stats JSONL）
+runtime_data/
+.data/
 dist/
 build/
 *.egg-info/

@@ -5,6 +5,19 @@
 
 ## [Unreleased]
 
+### Added (2026-09-25)
+
+- **运营只读端点（A-01，authority: 中枢仓 docs/specs/02-engine-read-api-spec.md）**：
+  ①feedback 空壳→真存（响应新增 `id`；`RUNTIME_DATA_DIR` 落 JSONL 重启不丢）；
+  ②no_match 缺口事件（product_flow 零命中 + knowledge_flow 零召回，GraphDeps
+  `no_match_recorder` 注入、不走 SSE 事件通道）+ 列表/统计端点；③knowledge 只读
+  四端点（stats/docs 列表/详情/test-retrieval 带分数召回测试）+ 命中统计
+  （hit-stats，search() final top-k 按日聚合落盘）；④health `refresh_history`
+  近 7 轮兜底刷新历史。core 增量：Chunk `doc_type` 透传、`rrf_fuse_scored`
+  （rrf_fuse 改薄委托）、`InMemoryVectorStore.doc_index()`（O1 家族 O(1) 定位）、
+  `RAGPipeline.search_scored/corpus`（corpus 仅 inmemory，pgvector 503 降级）。
+  新增 26 测试（484 全绿），ruff/mypy strict 全过。03-api-spec §7 契约登记。
+
 ### Added (2026-09-21)
 
 - **P1-5 规格意图确定性路由**：显式数值规格（「关键词+数字+单位」）+ 非守卫词 → 0-token
