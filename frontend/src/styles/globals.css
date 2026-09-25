@@ -68,8 +68,26 @@ code,
   animation: rfq-fade-slide 0.18s ease-out;
 }
 
+/* composer 工具栏二级菜单入场：锚定触发按钮，自下而上轻浮出（T-011 打磨同族） */
+@keyframes rfq-menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.rfq-menu-in {
+  transform-origin: bottom left;
+  animation: rfq-menu-pop 0.15s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rfq-fade-in,
+  .rfq-menu-in,
   .animate-bounce,
   .animate-pulse {
     animation: none !important;

@@ -20,6 +20,24 @@ logger = structlog.get_logger(__name__)
 
 _CHUNK_SIZE = 24
 
+# v1.3 追问建议（03-api-spec §2 done.follow_ups?）：按路由启发式给 0~2 条可点击追问，
+# 随 done 事件下发（零 token，不进 LLM）。刻意短句以适配前端 chip 行；
+# 仅 finish_reason=answered 时附带——错误/确认门/转人工路径追问无意义。
+_FOLLOW_UPS_BY_ROUTE: dict[str, list[str]] = {
+    "product_flow": ["这几款里哪款性价比最高？", "帮我直接发起询盘"],
+    "selection_flow": ["这几款里哪款性价比最高？", "帮我直接发起询盘"],
+    "spec_match_flow": ["哪一款更省电？", "帮我直接发起询盘"],
+    "compare_flow": ["帮我直接发起询盘"],
+    "knowledge_flow": ["展开讲讲关键细节", "实际选型要注意什么？"],
+    "solution_flow": ["这套方案的预算范围？", "看相关设备参数"],
+    "case_flow": ["同行业还有哪些案例？", "看相关设备参数"],
+    "faq_answer": ["帮我直接发起询盘"],
+}
+
+
+def _follow_ups(route: str) -> list[str]:
+    return _FOLLOW_UPS_BY_ROUTE.get(route, [])[:2]
+
 
 def _mask(phone: str) -> str:
     return f"{phone[:3]}****{phone[-4:]}" if len(phone) >= 7 else phone
@@ -169,4 +187,11 @@ async def map_graph_stream(rt: Runtime, graph_input: Any, config: dict[str, Any]
         for piece in _chunk_answer(final_answer):
             yield sse_text([("answer_delta", {"delta": piece})])
     _record_turn(rt, session_id, question, route, faq_hit, "inquiry_created" in [e[0] for e in event_trail], before, t0)
-    yield sse_text([("done", {"finish_reason": finish_reason})])
+    done_payload: dict[str, Any] = {"finish_reason": finish_reason}
+    if finish_reason == "answered":
+        # faq_hit 兜底：FAQ 快路径的 route 经 VALID_ROUTES 消毒后可能不在映射表，
+        # 用 faq_hit 信号回落到 faq_answer 的追问组
+        follow_ups = _follow_ups(route) or (_FOLLOW_UPS_BY_ROUTE["faq_answer"] if faq_hit else [])
+        if follow_ups:
+            done_payload["follow_ups"] = follow_ups
+    yield sse_text([("done", done_payload)])

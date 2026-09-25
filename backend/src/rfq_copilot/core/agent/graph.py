@@ -417,7 +417,7 @@ def _respond_node(deps: GraphDeps) -> Any:
                 # 末尾追加 product_compare 对比卡（03-api-spec v1.1）。
                 top_matched = matched[:3]
                 for product, _score, _entries in top_matched:
-                    events.append(("citation", {"title": product.name, "trust": "merchant"}))
+                    events.append(("citation", {"title": product.name, "url": product.url, "trust": "merchant"}))
                 cards, _shown_count = _product_cards_payload([p for p, _s, _e in top_matched], whitelist)
                 for card in cards:
                     events.append(("card", card))
@@ -593,7 +593,7 @@ def _respond_node(deps: GraphDeps) -> Any:
                     }
                 )
             for i, c in enumerate(chunks, start=1):
-                events.append(("citation", {"index": i, "title": c.title, "trust": c.trust_level}))
+                events.append(("citation", {"index": i, "title": c.title, "trust": c.trust_level, **({"url": c.url} if c.url else {})}))
             # 真流式 LLM 回答：token 经 custom 通道实时推送（sse_mapper 转发 answer_delta）
             writer = get_stream_writer()
             answer_system = (
@@ -785,7 +785,7 @@ async def _vacuum_system_suggestion(
     if not chunks:
         return ""
     top = chunks[0]
-    events.append(("citation", {"title": top.title, "trust": top.trust_level}))
+    events.append(("citation", {"title": top.title, "trust": top.trust_level, **({"url": top.url} if top.url else {})}))
     snippet = " ".join(top.content.split())[:160]
     return f"\n\n系统建议（{focus}工况）：{snippet}……\n（摘自站内资料「{top.title}」；具体机组配置以供应商方案为准。）"
 

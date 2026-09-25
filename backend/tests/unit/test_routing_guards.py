@@ -60,6 +60,14 @@ def test_selection_question_switches_to_knowledge_flow() -> None:
     assert got["route_guard_from"]["route"] == "product_flow"
 
 
+def test_spec_concept_question_with_importance_marker_reroutes() -> None:
+    """「极限真空和抽速哪个更重要？」含双规格词易被判 product_flow，但属概念对比
+    → 2026-09-23 实测缺口补词（哪个更重要/更重要/哪个关键/哪个优先）后应改道 knowledge_flow。"""
+    got = apply_selection_guard("极限真空和抽速哪个更重要？", _u("product_flow"))
+    assert got["route"] == "knowledge_flow"
+    assert got["route_guard"] == "selection_over_search"
+
+
 def test_selection_guard_covers_all_search_routes() -> None:
     for route in ("product_flow", "selection_flow", "compare_flow"):
         got = apply_selection_guard("旋片泵和干式螺杆泵有什么区别", _u(route))
