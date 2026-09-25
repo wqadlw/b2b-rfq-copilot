@@ -47,6 +47,7 @@ class InMemoryVectorStore:
 
     rows: list[tuple[Chunk, list[float]]] = field(default_factory=list)
     _inverted: dict[str, set[int]] | None = None
+    _doc_index: dict[str, list[Chunk]] | None = None  # spec 02 §2.0（O1）：doc_id → 家族分块，惰性构建
 
     def _index(self) -> dict[str, set[int]]:
         if self._inverted is None:
@@ -57,8 +58,18 @@ class InMemoryVectorStore:
             self._inverted = index
         return self._inverted
 
+    def doc_index(self) -> dict[str, list[Chunk]]:
+        """doc_id → 该文档全部分块（O1：knowledge 只读端点的 O(1) 家族定位；add/remove 失效）。"""
+        if self._doc_index is None:
+            index: dict[str, list[Chunk]] = {}
+            for chunk, _ in self.rows:
+                index.setdefault(chunk.doc_id, []).append(chunk)
+            self._doc_index = index
+        return self._doc_index
+
     def _invalidate(self) -> None:
         self._inverted = None
+        self._doc_index = None
 
     async def add(self, chunks: list[Chunk], vectors: list[list[float]]) -> int:
         if len(chunks) != len(vectors):

@@ -44,8 +44,14 @@ def extract_keywords(query: str, max_tokens: int = _MAX_TOKENS) -> list[str]:
     return tokens
 
 
-def rrf_fuse(*ranked_lists: Sequence[Chunk], top_k: int = 20) -> list[Chunk]:
-    """多路召回 RRF 融合：score = Σ 1/(60+rank)，同 doc_id 累加、保留首现 chunk。"""
+def rrf_fuse_scored(
+    *ranked_lists: Sequence[Chunk], top_k: int = 20
+) -> list[tuple[Chunk, float]]:
+    """多路召回 RRF 融合（带分数版，spec 02-engine-read-api-spec §2.0）。
+
+    score = Σ 1/(60+rank)，同 doc_id 累加、保留首现 chunk；返回按融合分降序的
+    (chunk, rrf_score)。rrf_fuse 是本函数丢弃分数的薄委托——两者永远同序同分。
+    """
     scores: dict[str, list[float]] = {}
     chunks: dict[str, Chunk] = {}
     for ranked in ranked_lists:
@@ -54,7 +60,12 @@ def rrf_fuse(*ranked_lists: Sequence[Chunk], top_k: int = 20) -> list[Chunk]:
             scores.setdefault(chunk.doc_id, []).append(contribution)
             chunks.setdefault(chunk.doc_id, chunk)
     ordered = sorted(scores.items(), key=lambda pair: -sum(pair[1]))
-    return [chunks[doc_id] for doc_id, _ in ordered[:top_k]]
+    return [(chunks[doc_id], sum(pair)) for doc_id, pair in ordered[:top_k]]
+
+
+def rrf_fuse(*ranked_lists: Sequence[Chunk], top_k: int = 20) -> list[Chunk]:
+    """多路召回 RRF 融合：score = Σ 1/(60+rank)，同 doc_id 累加、保留首现 chunk。"""
+    return [chunk for chunk, _ in rrf_fuse_scored(*ranked_lists, top_k=top_k)]
 
 
 def is_cjk(char: str) -> bool:

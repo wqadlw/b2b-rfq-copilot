@@ -252,6 +252,8 @@ class GraphDeps:
     solutions: SolutionsPort | None = None  # 行业方案目录（端口；离线 JSON 适配器实现）
     cases: CasesPort | None = None  # 客户案例目录（端口；离线 JSON 适配器实现）
     inquiry_status: Any | None = None  # 询盘状态查询（InquiryStatusPort；真通道专用）
+    # spec 02 §1.2（N2）：缺口事件记录器（app 层注入；core 不知存储。缺省 None 零影响）
+    no_match_recorder: Any | None = None
 
     def tool_registry(self) -> dict[str, Any]:
         """Tools physically registered from manifest; disabled capabilities never appear here."""
@@ -551,6 +553,16 @@ def _respond_node(deps: GraphDeps) -> Any:
                     "如需精确匹配，可告诉我目标真空度或抽速，也可以直接发起询盘。"
                 )
             else:
+                # spec 02 §1.2（N2）：零命中是知识缺口信号——注入记录器落 no_match 事件
+                if deps.no_match_recorder is not None:
+                    deps.no_match_recorder(
+                        {
+                            "session_id": state["session_id"],
+                            "question": message,
+                            "route": "product_flow",
+                            "keyword": keyword,
+                        }
+                    )
                 answer = "暂未找到匹配产品，您可以换个说法（如「无油旋片泵」），或直接提交询盘让供应商来找您。"
         elif route == "knowledge_flow" and deps.rag is not None:
             tool_calls.append("search_knowledge")
@@ -570,6 +582,16 @@ def _respond_node(deps: GraphDeps) -> Any:
                     retrieval_query = f"{retrieval_query} {category.strip()}"
             context, chunks = await deps.rag.context_for(retrieval_query, spec=None if spec.is_empty else spec)
             events.append(("retrieval", {"count": len(chunks), "trust": [c.trust_level for c in chunks]}))
+            # spec 02 §1.2（N2）：知识零召回也是缺口信号（改写后的检索词作 keyword 供聚类）
+            if not chunks and deps.no_match_recorder is not None:
+                deps.no_match_recorder(
+                    {
+                        "session_id": state["session_id"],
+                        "question": message,
+                        "route": "knowledge_flow",
+                        "keyword": retrieval_query,
+                    }
+                )
             for i, c in enumerate(chunks, start=1):
                 events.append(("citation", {"index": i, "title": c.title, "trust": c.trust_level}))
             # 真流式 LLM 回答：token 经 custom 通道实时推送（sse_mapper 转发 answer_delta）
