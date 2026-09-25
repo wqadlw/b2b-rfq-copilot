@@ -3,7 +3,7 @@
 import importlib
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +12,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from rfq_copilot.adapters.demo import data as demo_data
 from rfq_copilot.app.freshness import CorpusFreshness, load_corpus_freshness
 from rfq_copilot.app.metrics import MetricsRegistry
+from rfq_copilot.app.opslog import FeedbackStore, HitStatsRegistry, NoMatchStore
 from rfq_copilot.config.settings import get_settings
 from rfq_copilot.core.agent.graph import GraphDeps, build_graph
 from rfq_copilot.core.agent.llm import LLMClient, OpenAICompatLLM
@@ -47,6 +48,12 @@ class Runtime:
     corpus_freshness: "CorpusFreshness | None" = None
     # 08-knowledge-export-spec §6.4：最近一轮兜底刷新结果（落 /health；未启用为 None）
     last_refresh: dict[str, Any] | None = None
+    # spec 02 §3（N4）：兜底刷新历史（近 7 轮；内存态，重启清零）
+    refresh_history: list[dict[str, Any]] = field(default_factory=list)
+    # spec 02 §1.0：运营观测存储（RUNTIME_DATA_DIR 空 = 纯内存）
+    feedback_store: FeedbackStore = field(default_factory=FeedbackStore)
+    no_match_store: NoMatchStore = field(default_factory=NoMatchStore)
+    hit_stats: HitStatsRegistry = field(default_factory=HitStatsRegistry)
 
 
 def _adapter_module(adapter: str) -> Any:
@@ -66,11 +73,14 @@ def _build_embedder(settings: Any) -> HashingEmbedder | OpenAICompatEmbedder:
     return HashingEmbedder()
 
 
-def _build_rag(settings: Any, manifest: Manifest) -> RAGPipeline | None:
+def _build_rag(
+    settings: Any, manifest: Manifest, hit_recorder: Any = None
+) -> RAGPipeline | None:
     """Build the pipeline with an empty store; seeding happens at app startup (async).
 
     QA-0007/0010：按 Settings.rag_store 装配存储——"inmemory"（demo/CI）|
     "pgvector"（prod，HNSW，DSN 缺失即 ConfigError 快速失败）。
+    hit_recorder：spec 02 §2.5 命中统计钩子（仅 search() 路径触发）。
     """
     if not manifest.ports.knowledge_source.enabled:
         return None
@@ -81,7 +91,13 @@ def _build_rag(settings: Any, manifest: Manifest) -> RAGPipeline | None:
         store: Any = PgVectorStore(settings.rag_pgvector_dsn)
     else:
         store = InMemoryVectorStore()
-    return RAGPipeline(embedder=embedder, store=store, reranker=NoopReranker(), hybrid=settings.rag_hybrid)
+    return RAGPipeline(
+        embedder=embedder,
+        store=store,
+        reranker=NoopReranker(),
+        hybrid=settings.rag_hybrid,
+        hit_recorder=hit_recorder,
+    )
 
 
 async def seed_demo(runtime: Runtime) -> None:
@@ -137,7 +153,12 @@ def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> R
         base_url=settings.llm_base_url, api_key=settings.llm_api_key, model=settings.llm_model
     )
     store = SessionStore()
-    rag = _build_rag(settings, manifest)
+    # spec 02 §1.0：运营观测存储（落盘目录空串 = 纯内存，CI/测试）
+    data_dir = getattr(settings, "runtime_data_dir", "") or ""
+    feedback_store = FeedbackStore(data_dir)
+    no_match_store = NoMatchStore(data_dir)
+    hit_stats = HitStatsRegistry(data_dir)
+    rag = _build_rag(settings, manifest, hit_recorder=hit_stats.record)
     deps = GraphDeps(
         manifest=manifest,
         llm=client,
@@ -150,6 +171,7 @@ def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> R
         rag=rag,
         inquiry_sink=ports.inquiry_sink if manifest.ports.inquiry_sink.enabled else None,
         lead_distribution=ports.lead_distribution if manifest.ports.lead_distribution.enabled else None,
+        no_match_recorder=no_match_store.append,  # spec 02 §1.2（N2）
     )
     if settings.knowledge_data_dir:
         # 行业方案/案例目录（demo 与真通道模式都注入：离线知识资产，不依赖站点在线）
@@ -170,6 +192,9 @@ def build_runtime(adapter: str | None = None, llm: LLMClient | None = None) -> R
         metrics=MetricsRegistry(),
         faq_registry=FaqRegistry(build_faq()),
         checkpointer=checkpointer,
+        feedback_store=feedback_store,
+        no_match_store=no_match_store,
+        hit_stats=hit_stats,
     )
 
 
