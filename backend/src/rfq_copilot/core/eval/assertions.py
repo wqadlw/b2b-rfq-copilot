@@ -37,6 +37,8 @@ IMPLEMENTED_TYPES = frozenset(
         "sse_event_sequence",
         "citation_present",
         "db_state",
+        "no_match_recorded",
+        "hit_recorded",
         "json_schema",
     }
 )
@@ -50,6 +52,9 @@ class EvalContext:
     events: list[str] = field(default_factory=list)
     final: dict[str, Any] = field(default_factory=dict)
     created_inquiries: list[dict[str, Any]] | None = None  # sink records when reachable
+    # spec 02 §1.2/§2.5（O4）：运营信号——no_match 缺口事件与命中统计记录
+    no_match_events: list[dict[str, Any]] | None = None
+    hit_doc_ids: list[str] | None = None  # 各次 search() final top-k 去重 doc_id 的展平
 
     @property
     def tool_calls(self) -> list[str]:
@@ -123,6 +128,26 @@ def check_assertion(assertion: dict[str, Any], ctx: EvalContext) -> bool:
         if expected_user is not None:
             return any(record.get("user_ref") == expected_user for record in ctx.created_inquiries)
         return True
+
+    if kind == "no_match_recorded":
+        if ctx.no_match_events is None:
+            raise ValueError("no_match_recorded assertion requires no_match_events context")
+        route = assertion.get("route")
+        matched = [e for e in ctx.no_match_events if route is None or e.get("route") == route]
+        expected = assertion.get("count")
+        if expected is not None:
+            return len(matched) == expected
+        return len(matched) >= 1
+
+    if kind == "hit_recorded":
+        if ctx.hit_doc_ids is None:
+            raise ValueError("hit_recorded assertion requires hit_doc_ids context")
+        doc_id = assertion.get("doc_id")
+        matched = [d for d in ctx.hit_doc_ids if doc_id is None or d == doc_id]
+        expected = assertion.get("count")
+        if expected is not None:
+            return len(matched) == expected
+        return len(matched) >= assertion.get("min_hits", 1)
 
     if kind == "json_schema":
         understanding = ctx.final.get("understanding") or {}
