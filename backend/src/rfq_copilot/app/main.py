@@ -26,7 +26,7 @@ from rfq_copilot.app.guest_paths import (
 )
 from rfq_copilot.app.knowledge_refresh import start_knowledge_refresh
 from rfq_copilot.app.limiter import DailyTokenBudget, SlidingWindowLimiter
-from rfq_copilot.app.metrics import VALID_PERIODS
+from rfq_copilot.app.metrics import MAX_SERIES_DAYS, VALID_PERIODS
 from rfq_copilot.app.runtime import (
     Runtime,
     build_runtime,
@@ -742,6 +742,17 @@ def create_app() -> FastAPI:
                 detail={"code": "INVALID_PERIOD", "message": "period 仅支持 today/week/month"},
             )
         return get_runtime().metrics.summary(period)
+
+    @app.get("/api/v1/analytics/usage")
+    async def analytics_usage(request: Request, days: int = 14) -> dict[str, Any]:
+        """逐日用量序列（用量屏）：日桶 turns/sessions/LLM 调用/in+out tokens/错误/延迟。需 X-Internal-Token。"""
+        _check_internal_token(request)
+        if days < 1 or days > MAX_SERIES_DAYS:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_DAYS", "message": f"days 取值 1~{MAX_SERIES_DAYS}"},
+            )
+        return get_runtime().metrics.usage_series(days)
 
     # ---- CS-1 agent takeover (all internal-token gated; authority: 03-api-spec §6) ----
 
