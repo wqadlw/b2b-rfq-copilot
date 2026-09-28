@@ -27,7 +27,13 @@ def demo_manifest() -> Manifest:
     return load_manifest(ADAPTER_DIR)
 
 
-def make_deps(scripted: list[dict[str, Any]] | None = None, manifest: Manifest | None = None) -> tuple[GraphDeps, Any]:
+def make_deps(
+    scripted: list[dict[str, Any]] | None = None,
+    manifest: Manifest | None = None,
+    no_match_events: list[dict[str, Any]] | None = None,
+    hit_events: list[list[str]] | None = None,
+) -> tuple[GraphDeps, Any]:
+    """可选捕获列表（O4 评测信号）：传入即接线 no_match 记录器与命中统计钩子。"""
     ports = build_demo_ports()
     m = manifest or load_manifest(ADAPTER_DIR)
     # seed the M1 RAG store synchronously (hashing embeddings; deterministic in CI)
@@ -36,7 +42,12 @@ def make_deps(scripted: list[dict[str, Any]] | None = None, manifest: Manifest |
     chunks = [chunk for doc in docs for chunk in chunk_document(doc)]
     # 协议转 async 后（QA-0007/0010），同步测试装配直接填 rows（make_deps 会在事件循环内被调用）
     store.rows.extend(zip(chunks, HashingEmbedder().embed_sync([c.content for c in chunks]), strict=True))
-    rag = RAGPipeline(embedder=HashingEmbedder(), store=store, reranker=NoopReranker())
+    rag = RAGPipeline(
+        embedder=HashingEmbedder(),
+        store=store,
+        reranker=NoopReranker(),
+        hit_recorder=hit_events.append if hit_events is not None else None,
+    )
     deps = GraphDeps(
         manifest=m,
         llm=FakeLLM(scripted or []),
@@ -49,6 +60,8 @@ def make_deps(scripted: list[dict[str, Any]] | None = None, manifest: Manifest |
         inquiry_sink=ports.inquiry_sink,
         lead_distribution=ports.lead_distribution,
     )
+    if no_match_events is not None:
+        deps.no_match_recorder = no_match_events.append
     return deps, ports
 
 

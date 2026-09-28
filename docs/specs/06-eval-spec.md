@@ -1,6 +1,7 @@
 # 06 · EVAL SPEC · 评测体系规范
 
-> 密级：公开 · 版本 v1.1 · 2026-09-19 · 权威关联：四族构成与自动派生公式见 `01-port-spec.md` §7（唯一权威）；本文定义用例格式、断言、指标与报告。
+> 密级：公开 · 版本 v1.2 · 2026-09-26 · 权威关联：四族构成与自动派生公式见 `01-port-spec.md` §7（唯一权威）；本文定义用例格式、断言、指标与报告。
+> v1.2 变更：§3 新增 `no_match_recorded` / `hit_recorded`（O4 评测基线扩充，运营信号入 CI 门禁）+ `preconditions.empty_rag`（空库前置，零召回路径）。
 > v1.1 变更：§2 登记 `ci` / `scripted_understanding` / `scripted_followup` 字段；§6 新增 CI 覆盖铁律（C 族全量入 CI）与 baseline 诚实口径（QA-0026/0027）。
 
 ## 1. 四族与合并门禁
@@ -59,6 +60,8 @@ B/C/D 任何一条红 = 阻塞合并；LLM 打分不用于 B/C/D。
 | `json_schema` | 结构化输出符合 05 号规格 |
 | `sse_event_sequence` | SSE 事件序列符合 03 号规格 |
 | `db_state` | demo SQLite 询盘/状态断言（确认门通过后才落库） |
+| `no_match_recorded` | no_match 缺口事件断言（spec 02 §1.2）：`route` 可选过滤；`count` 精确匹配，缺省 ≥1（O4） |
+| `hit_recorded` | 知识命中统计断言（spec 02 §2.5，search() final top-k 去重 doc_id）：`doc_id` 可选过滤；`count` 精确匹配 / `min_hits` 下限（缺省 1）（O4） |
 
 ## 4. 指标定义（报告口径）
 

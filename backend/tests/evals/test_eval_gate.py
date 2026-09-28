@@ -95,7 +95,20 @@ async def test_case_passes_on_deterministic_path(case: dict[str, Any]) -> None:
     if case.get("scripted_understanding"):
         scripted.append(case["scripted_understanding"])
     scripted.extend(case.get("scripted_followup") or [])
-    deps, ports = make_deps(scripted=scripted or None)
+    # O4：运营信号捕获（no_match 缺口事件 / 命中统计 doc_id），断言类型 no_match_recorded/hit_recorded 消费
+    no_match_events: list[dict[str, Any]] = []
+    hit_events: list[list[str]] = []
+    deps, ports = make_deps(scripted=scripted or None, no_match_events=no_match_events, hit_events=hit_events)
+    if (case.get("preconditions") or {}).get("empty_rag"):
+        # 空库前置：knowledge_flow 零召回路径（与集成测试 test_no_match_recorder 同构）
+        from rfq_copilot.core.rag.embedding import HashingEmbedder
+        from rfq_copilot.core.rag.pipeline import RAGPipeline
+        from rfq_copilot.core.rag.reranker import NoopReranker
+        from rfq_copilot.core.rag.store import InMemoryVectorStore
+
+        deps.rag = RAGPipeline(
+            embedder=HashingEmbedder(), store=InMemoryVectorStore(), reranker=NoopReranker(), hit_recorder=hit_events.append
+        )
     graph = build_graph(deps)
     try:
         final = await graph.ainvoke(
@@ -114,6 +127,8 @@ async def test_case_passes_on_deterministic_path(case: dict[str, Any]) -> None:
         events=[kind for kind, _ in final.get("events", [])],
         final=final,
         created_inquiries=list(ports.store.inquiries),
+        no_match_events=no_match_events,
+        hit_doc_ids=[doc_id for call in hit_events for doc_id in call],
     )
     failures = []
     for assertion in case["asserts"]:

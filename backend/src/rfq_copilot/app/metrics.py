@@ -13,6 +13,7 @@ from typing import Any
 
 _PERIOD_DAYS = {"today": 1, "week": 7, "month": 30}
 VALID_PERIODS = tuple(_PERIOD_DAYS)
+MAX_SERIES_DAYS = 30
 
 
 @dataclass
@@ -103,4 +104,49 @@ class MetricsRegistry:
             "stream_chars": stream_chars,
             "avg_latency_ms": avg_latency,
             "top_questions": [{"question": q, "count": n} for q, n in top],
+        }
+
+    def usage_series(self, days: int) -> dict[str, Any]:
+        """逐日用量序列（用量屏核心：Dify/FastGPT 用量页公共子集——日桶 + in/out tokens）。
+
+        本地时区按日分桶，请求窗口内零流量日照常出 0（计数语义，非编造）。
+        诚实边界：registry 是 maxlen 截断队列（默认 1 万轮），若窗口起点早于队列
+        最老记录，更早的日桶会少计——响应携带 `oldest_record_age_days` 供前端标注。
+        """
+        import datetime as _dt
+
+        n = max(1, min(int(days), MAX_SERIES_DAYS))
+        today = _dt.date.today()
+        dates = [today - _dt.timedelta(days=i) for i in range(n - 1, -1, -1)]
+        buckets: dict[str, list[TurnRecord]] = {d.isoformat(): [] for d in dates}
+
+        with self._lock:
+            rows = list(self._turns)
+        oldest_ts = rows[0].ts if rows else None
+        for t in rows:
+            key = _dt.datetime.fromtimestamp(t.ts).date().isoformat()
+            if key in buckets:
+                buckets[key].append(t)
+
+        series = []
+        for d in dates:
+            recs = buckets[d.isoformat()]
+            count = len(recs)
+            series.append(
+                {
+                    "date": d.isoformat(),
+                    "turns": count,
+                    "sessions": len({r.session_id for r in recs}),
+                    "llm_calls": sum(r.llm_calls for r in recs),
+                    "prompt_tokens": sum(r.prompt_tokens for r in recs),
+                    "completion_tokens": sum(r.completion_tokens for r in recs),
+                    "errors": sum(1 for r in recs if r.errored),
+                    "avg_latency_ms": round(sum(r.latency_ms for r in recs) / count) if count else 0,
+                }
+            )
+
+        return {
+            "days": n,
+            "oldest_record_age_days": round((time.time() - oldest_ts) / 86400, 1) if oldest_ts else None,
+            "series": series,
         }
