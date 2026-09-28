@@ -30,6 +30,8 @@ class TurnRecord:
     latency_ms: int
     inquiry_created: bool
     errored: bool
+    prompt_cache_hit: int = 0
+    prompt_cache_miss: int = 0
 
 
 class MetricsRegistry:
@@ -50,6 +52,8 @@ class MetricsRegistry:
         latency_ms: int = 0,
         inquiry_created: bool = False,
         errored: bool = False,
+        prompt_cache_hit: int = 0,
+        prompt_cache_miss: int = 0,
         ts: float | None = None,
     ) -> None:
         rec = TurnRecord(
@@ -65,6 +69,8 @@ class MetricsRegistry:
             latency_ms=latency_ms,
             inquiry_created=inquiry_created,
             errored=errored,
+            prompt_cache_hit=prompt_cache_hit,
+            prompt_cache_miss=prompt_cache_miss,
         )
         with self._lock:
             self._turns.append(rec)
@@ -101,6 +107,10 @@ class MetricsRegistry:
             "errors": errors,
             "llm_calls": llm_calls,
             "llm_tokens": {"prompt": prompt_tokens, "completion": completion_tokens},
+            "llm_cache": {
+                "prompt_cache_hit_tokens": sum(t.prompt_cache_hit for t in rows),
+                "prompt_cache_miss_tokens": sum(t.prompt_cache_miss for t in rows),
+            },
             "stream_chars": stream_chars,
             "avg_latency_ms": avg_latency,
             "top_questions": [{"question": q, "count": n} for q, n in top],
@@ -140,6 +150,8 @@ class MetricsRegistry:
                     "llm_calls": sum(r.llm_calls for r in recs),
                     "prompt_tokens": sum(r.prompt_tokens for r in recs),
                     "completion_tokens": sum(r.completion_tokens for r in recs),
+                    "prompt_cache_hit_tokens": sum(r.prompt_cache_hit for r in recs),
+                    "prompt_cache_miss_tokens": sum(r.prompt_cache_miss for r in recs),
                     "errors": sum(1 for r in recs if r.errored),
                     "avg_latency_ms": round(sum(r.latency_ms for r in recs) / count) if count else 0,
                 }
