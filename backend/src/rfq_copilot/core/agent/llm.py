@@ -34,6 +34,12 @@ class OpenAICompatLLM:
     Usage counters (call_count / prompt_tokens_total / completion_tokens_total /
     stream_chars_total) let the SSE mapper attribute per-turn consumption via
     before/after snapshots — no changes needed at call sites.
+
+    v1.3 (spec 02 §2.6): prompt_cache_hit_total / prompt_cache_miss_total accumulate
+    DeepSeek's prefix-cache usage fields (absent on other providers → stay 0).
+    stream_text sends stream_options.include_usage and books the usage-only final
+    chunk (empty choices list — guarded); providers without support simply never
+    carry a usage key and accounting falls back to the old behavior.
     """
 
     def __init__(self, base_url: str, api_key: str, model: str, timeout_seconds: float = 30.0) -> None:
@@ -45,6 +51,14 @@ class OpenAICompatLLM:
         self.prompt_tokens_total = 0
         self.completion_tokens_total = 0
         self.stream_chars_total = 0
+        self.prompt_cache_hit_total = 0
+        self.prompt_cache_miss_total = 0
+
+    def _book_usage(self, usage: dict[str, Any]) -> None:
+        self.prompt_tokens_total += int(usage.get("prompt_tokens") or 0)
+        self.completion_tokens_total += int(usage.get("completion_tokens") or 0)
+        self.prompt_cache_hit_total += int(usage.get("prompt_cache_hit_tokens") or 0)
+        self.prompt_cache_miss_total += int(usage.get("prompt_cache_miss_tokens") or 0)
 
     async def complete_json(self, system: str, user: str) -> dict[str, Any]:
         payload = {
@@ -66,9 +80,7 @@ class OpenAICompatLLM:
         resp.raise_for_status()
         data = resp.json()
         self.call_count += 1
-        usage = data.get("usage") or {}
-        self.prompt_tokens_total += int(usage.get("prompt_tokens") or 0)
-        self.completion_tokens_total += int(usage.get("completion_tokens") or 0)
+        self._book_usage(data.get("usage") or {})
         content = data["choices"][0]["message"]["content"]
         return _loads(content)
 
@@ -83,6 +95,7 @@ class OpenAICompatLLM:
                 {"role": "user", "content": user},
             ],
             "stream": True,
+            "stream_options": {"include_usage": True},
             "temperature": 0.3,
         }
         try:
@@ -104,7 +117,11 @@ class OpenAICompatLLM:
                         chunk = json.loads(data)
                     except json.JSONDecodeError:
                         continue
-                    delta = chunk["choices"][0].get("delta", {}).get("content")
+                    # usage-only 末块（include_usage 约定）：choices 为空数组，先记账再取 delta
+                    if chunk.get("usage"):
+                        self._book_usage(chunk["usage"])
+                    choices = chunk.get("choices") or []
+                    delta = choices[0].get("delta", {}).get("content") if choices else None
                     if delta:
                         self.stream_chars_total += len(delta)
                         yield delta
@@ -128,6 +145,8 @@ class FakeLLM:
         self.prompt_tokens_total = 0
         self.completion_tokens_total = 0
         self.stream_chars_total = 0
+        self.prompt_cache_hit_total = 0
+        self.prompt_cache_miss_total = 0
 
     async def complete_json(self, system: str, user: str) -> dict[str, Any]:
         self.calls.append((system, user))

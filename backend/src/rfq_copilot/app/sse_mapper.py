@@ -72,7 +72,7 @@ def _chunk_answer(answer: str) -> list[str]:
     return [answer[i : i + _CHUNK_SIZE] for i in range(0, len(answer), _CHUNK_SIZE)]
 
 
-def _llm_counters(llm: Any) -> tuple[int, int, int, int]:
+def _llm_counters(llm: Any) -> tuple[int, int, int, int, int, int]:
     calls = getattr(llm, "call_count", None)
     if calls is None:
         calls = len(getattr(llm, "calls", []))
@@ -81,6 +81,8 @@ def _llm_counters(llm: Any) -> tuple[int, int, int, int]:
         getattr(llm, "prompt_tokens_total", 0),
         getattr(llm, "completion_tokens_total", 0),
         getattr(llm, "stream_chars_total", 0),
+        getattr(llm, "prompt_cache_hit_total", 0),
+        getattr(llm, "prompt_cache_miss_total", 0),
     )
 
 
@@ -91,7 +93,7 @@ def _record_turn(
     route: str,
     faq_hit: bool,
     inquiry_created: bool,
-    before: tuple[int, int, int, int],
+    before: tuple[int, int, int, int, int, int],
     t0: float,
     *,
     errored: bool = False,
@@ -106,6 +108,8 @@ def _record_turn(
         prompt_tokens=max(0, after[1] - before[1]),
         completion_tokens=max(0, after[2] - before[2]),
         stream_chars=max(0, after[3] - before[3]),
+        prompt_cache_hit=max(0, after[4] - before[4]),
+        prompt_cache_miss=max(0, after[5] - before[5]),
         latency_ms=int((time.perf_counter() - t0) * 1000),
         inquiry_created=inquiry_created,
         errored=errored,
